@@ -1,0 +1,5 @@
+{
+  "name": "ChromaNumber AI",
+  "description": "An advanced AI-powered application that converts images into meticulous color-by-number templates. Features AI image remixing via Gemini and a high-precision digital coloring interface.",
+  "requestFramePermissions": []
+}

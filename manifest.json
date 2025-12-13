@@ -1,0 +1,20 @@
+{
+  "short_name": "ChromaNumber",
+  "name": "ChromaNumber AI",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2970/2970785.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2970/2970785.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#111827",
+  "background_color": "#030712"
+}
