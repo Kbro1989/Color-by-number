@@ -1,4 +1,4 @@
-name = "chromanumber-ai"
+name = "color-by-number"
 compatibility_date = "2024-09-23"
 account_id = "6872653edcee9c791787c1b783173793"
 assets = { directory = "./dist" }
