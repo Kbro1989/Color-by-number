@@ -1,6 +1,7 @@
 name = "chromanumber-ai"
 compatibility_date = "2024-09-23"
-assets = { directory = "./dist", binding = "ASSETS" }
+account_id = "6872653edcee9c791787c1b783173793"
+assets = { directory = "./dist" }
 workers_dev = true
 
 [observability]
