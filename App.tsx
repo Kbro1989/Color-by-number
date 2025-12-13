@@ -25,14 +25,14 @@ const App: React.FC = () => {
   const [processedData, setProcessedData] = useState<ProcessedImage | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  
+
   // Remix & Generation State
   const [remixPrompt, setRemixPrompt] = useState('');
   const [genPrompt, setGenPrompt] = useState('');
   const [selectedStyle, setSelectedStyle] = useState<string>('');
   const [generatedPreview, setGeneratedPreview] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  
+
   // Coloring State
   const [activeColor, setActiveColor] = useState<PaletteColor | null>(null);
   const [activeTheme, setActiveTheme] = useState<PaletteTheme>(PaletteTheme.STANDARD);
@@ -53,7 +53,7 @@ const App: React.FC = () => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
-        setToasts(prev => prev.filter(t => t.id !== id));
+      setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
   };
 
@@ -67,20 +67,20 @@ const App: React.FC = () => {
 
   // Map of ColorID -> Count of regions filled
   const colorProgressMap = useMemo(() => {
-      const map = new Map<number, number>();
-      if(!processedData) return map;
-      
-      // Initialize with 0
-      processedData.palette.forEach(c => map.set(c.id, 0));
-      
-      filledRegions.forEach(rId => {
-          const region = processedData.regions.find(r => r.id === rId);
-          if(region) {
-              const cId = processedData.palette[region.colorId].id;
-              map.set(cId, (map.get(cId) || 0) + region.pixels.length);
-          }
-      });
-      return map;
+    const map = new Map<number, number>();
+    if (!processedData) return map;
+
+    // Initialize with 0
+    processedData.palette.forEach(c => map.set(c.id, 0));
+
+    filledRegions.forEach(rId => {
+      const region = processedData.regions.find(r => r.id === rId);
+      if (region) {
+        const cId = processedData.palette[region.colorId].id;
+        map.set(cId, (map.get(cId) || 0) + region.pixels.length);
+      }
+    });
+    return map;
   }, [filledRegions, processedData]);
 
   const totalPixels = useMemo(() => processedData ? processedData.originalWidth * processedData.originalHeight : 1, [processedData]);
@@ -89,18 +89,18 @@ const App: React.FC = () => {
     // Calculate based on filled PIXELS not regions for accuracy
     let filledPixels = 0;
     filledRegions.forEach(rId => {
-         const region = processedData.regions.find(r => r.id === rId);
-         if(region) filledPixels += region.pixels.length;
+      const region = processedData.regions.find(r => r.id === rId);
+      if (region) filledPixels += region.pixels.length;
     });
     return (filledPixels / totalPixels) * 100;
   }, [filledRegions, processedData, totalPixels]);
 
   // Completion Check
   useEffect(() => {
-      if (progress > 99.9 && !showCelebration && stage === AppStage.COLORING) {
-          setShowCelebration(true);
-          addToast("Masterpiece Complete! 🎉", 'success');
-      }
+    if (progress > 99.9 && !showCelebration && stage === AppStage.COLORING) {
+      setShowCelebration(true);
+      addToast("Masterpiece Complete! 🎉", 'success');
+    }
   }, [progress, stage]);
 
   // Handlers
@@ -121,18 +121,18 @@ const App: React.FC = () => {
     setIsGenerating(true);
     setGeneratedPreview(null);
     try {
-        const result = await generateImageFromPrompt(genPrompt, selectedStyle);
-        if (result) {
-            setGeneratedPreview(result);
-            addToast("Image generated successfully!", 'success');
-        } else {
-            addToast("Could not generate image. Please try again.", 'error');
-        }
-    } catch(e) {
-        console.error(e);
-        addToast("Generation failed. Check console.", 'error');
+      const result = await generateImageFromPrompt(genPrompt, selectedStyle);
+      if (result) {
+        setGeneratedPreview(result);
+        addToast("Image generated successfully!", 'success');
+      } else {
+        addToast("Could not generate image. Please try again.", 'error');
+      }
+    } catch (e) {
+      console.error(e);
+      addToast("Generation failed. Check console.", 'error');
     } finally {
-        setIsGenerating(false);
+      setIsGenerating(false);
     }
   };
 
@@ -147,36 +147,36 @@ const App: React.FC = () => {
       await new Promise((resolve) => { img.onload = resolve; });
 
       const canvas = document.createElement('canvas');
-      const TARGET_MIN_DIM = 2400; 
-      const TARGET_MAX_DIM = 3200; 
+      const TARGET_MIN_DIM = 2400;
+      const TARGET_MAX_DIM = 3200;
 
       let w = img.width;
       let h = img.height;
       let scale = 1;
 
       const maxSide = Math.max(w, h);
-      
+
       if (maxSide < TARGET_MIN_DIM) {
-          scale = TARGET_MIN_DIM / maxSide;
+        scale = TARGET_MIN_DIM / maxSide;
       } else if (maxSide > TARGET_MAX_DIM) {
-          scale = TARGET_MAX_DIM / maxSide;
+        scale = TARGET_MAX_DIM / maxSide;
       }
 
       canvas.width = Math.floor(w * scale);
       canvas.height = Math.floor(h * scale);
-      
+
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error("Canvas Context Failed");
-      
-      ctx.imageSmoothingEnabled = true; 
+
+      ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-      const result = await processImageForColoring(imageData, 56); 
+      const result = await processImageForColoring(imageData, 56);
       setProcessedData(result);
-      setFilledRegions(new Set()); 
-      
+      setFilledRegions(new Set());
+
       if (result.palette.length > 0) setActiveColor(result.palette[0]);
       setStage(AppStage.COLORING);
       addToast("Image processed! Ready to color.", 'success');
@@ -211,29 +211,29 @@ const App: React.FC = () => {
 
   const downloadImage = () => {
     if (!processedData) return;
-    
+
     const canvas = document.createElement('canvas');
     const w = processedData.originalWidth;
     const h = processedData.originalHeight;
     const isComplete = progress > 99;
-    
+
     const legendWidth = isComplete ? 0 : 300;
     canvas.width = w + legendWidth;
     canvas.height = Math.max(h, isComplete ? 0 : currentPalette.length * 40 + 50);
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     const imgData = ctx.createImageData(w, h);
     const buf = new Uint32Array(imgData.data.buffer);
-    buf.fill(0xFFFFFFFF); 
-    
+    buf.fill(0xFFFFFFFF);
+
     processedData.regions.forEach(region => {
       const isFilled = filledRegions.has(region.id) || isComplete;
-      let r = 255, g = 255, b = 255; 
+      let r = 255, g = 255, b = 255;
 
       if (isFilled) {
         const c = currentPalette[region.colorId].rgb;
@@ -245,40 +245,40 @@ const App: React.FC = () => {
     ctx.putImageData(imgData, 0, 0);
 
     if (!isComplete) {
-       ctx.fillStyle = '#cfcfcf'; 
-       processedData.regions.forEach(region => {
-         if (!filledRegions.has(region.id)) {
-            for(const pIdx of region.borderPixels) ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
-            
-            const fontSize = Math.max(10, Math.floor(w / 120));
-            if (region.pixels.length > fontSize * fontSize) {
-               ctx.fillStyle = '#9ca3af';
-               ctx.font = `bold ${fontSize}px sans-serif`;
-               ctx.textAlign = 'center';
-               ctx.fillText(currentPalette[region.colorId].id.toString(), region.centroid.x, region.centroid.y);
-            }
-         }
-       });
-       
-       ctx.fillStyle = '#f3f4f6'; 
-       ctx.fillRect(w, 0, legendWidth, canvas.height);
-       
-       ctx.textAlign = 'left';
-       ctx.font = 'bold 20px sans-serif';
-       ctx.fillStyle = '#111827';
-       ctx.fillText("Color Key", w + 20, 40);
-       
-       currentPalette.forEach((c, idx) => {
-           const y = 80 + idx * 40;
-           ctx.fillStyle = c.hex;
-           ctx.fillRect(w + 20, y - 20, 30, 30);
-           ctx.strokeStyle = '#000';
-           ctx.strokeRect(w + 20, y - 20, 30, 30);
-           
-           ctx.fillStyle = '#000';
-           ctx.font = '16px sans-serif';
-           ctx.fillText(`#${c.id}`, w + 60, y);
-       });
+      ctx.fillStyle = '#cfcfcf';
+      processedData.regions.forEach(region => {
+        if (!filledRegions.has(region.id)) {
+          for (const pIdx of region.borderPixels) ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
+
+          const fontSize = Math.max(10, Math.floor(w / 120));
+          if (region.pixels.length > fontSize * fontSize) {
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(currentPalette[region.colorId].id.toString(), region.centroid.x, region.centroid.y);
+          }
+        }
+      });
+
+      ctx.fillStyle = '#f3f4f6';
+      ctx.fillRect(w, 0, legendWidth, canvas.height);
+
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillStyle = '#111827';
+      ctx.fillText("Color Key", w + 20, 40);
+
+      currentPalette.forEach((c, idx) => {
+        const y = 80 + idx * 40;
+        ctx.fillStyle = c.hex;
+        ctx.fillRect(w + 20, y - 20, 30, 30);
+        ctx.strokeStyle = '#000';
+        ctx.strokeRect(w + 20, y - 20, 30, 30);
+
+        ctx.fillStyle = '#000';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(`#${c.id}`, w + 60, y);
+      });
     }
 
     const link = document.createElement('a');
@@ -305,7 +305,7 @@ const App: React.FC = () => {
               <div className="space-y-6">
                 <div className="relative group rounded-xl overflow-hidden border-2 border-gray-700 bg-gray-950">
                   <img src={sourceImage} alt="Preview" className="w-full object-contain max-h-80" />
-                  <button 
+                  <button
                     onClick={() => setSourceImage(null)}
                     className="absolute top-2 right-2 p-2 bg-red-600/90 hover:bg-red-600 rounded-full text-white shadow-lg"
                   >
@@ -314,24 +314,24 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="space-y-4">
-                   {/* Style Selector */}
-                  <select 
-                      value={selectedStyle}
-                      onChange={(e) => setSelectedStyle(e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  {/* Style Selector */}
+                  <select
+                    value={selectedStyle}
+                    onChange={(e) => setSelectedStyle(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
                   >
-                      {AI_STYLES.map(s => <option key={s.label} value={s.value}>{s.label} Style</option>)}
+                    {AI_STYLES.map(s => <option key={s.label} value={s.value}>{s.label} Style</option>)}
                   </select>
 
                   <div className="flex gap-2">
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       placeholder="Remix Prompt: e.g. 'Add a sunset'"
                       className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:outline-none"
                       value={remixPrompt}
                       onChange={(e) => setRemixPrompt(e.target.value)}
                     />
-                    <button 
+                    <button
                       onClick={handleRemix}
                       disabled={isProcessing || !remixPrompt}
                       className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors flex items-center gap-2"
@@ -339,8 +339,8 @@ const App: React.FC = () => {
                       {isProcessing ? '...' : <Icons.Wand />}
                     </button>
                   </div>
-                  
-                  <button 
+
+                  <button
                     onClick={processImage}
                     disabled={isProcessing}
                     className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-bold text-lg shadow-lg transform transition active:scale-[0.98] disabled:opacity-50"
@@ -352,9 +352,9 @@ const App: React.FC = () => {
             ) : (
               <>
                 <div className="border-4 border-dashed border-gray-800 rounded-2xl p-12 text-center hover:border-purple-500 hover:bg-gray-800/30 transition-all cursor-pointer relative group">
-                  <input 
-                    type="file" 
-                    accept="image/*" 
+                  <input
+                    type="file"
+                    accept="image/*"
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     onChange={handleFileUpload}
                   />
@@ -368,60 +368,60 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-4 py-2">
-                    <div className="h-px flex-1 bg-gray-800"></div>
-                    <span className="text-gray-500 text-xs font-bold tracking-wider">OR GENERATE WITH AI</span>
-                    <div className="h-px flex-1 bg-gray-800"></div>
+                  <div className="h-px flex-1 bg-gray-800"></div>
+                  <span className="text-gray-500 text-xs font-bold tracking-wider">OR GENERATE WITH AI</span>
+                  <div className="h-px flex-1 bg-gray-800"></div>
                 </div>
 
                 <div className="space-y-4 bg-gray-800/50 p-6 rounded-xl border border-gray-800">
-                    {!generatedPreview ? (
-                        <>
-                             <select 
-                                value={selectedStyle}
-                                onChange={(e) => setSelectedStyle(e.target.value)}
-                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none mb-2"
-                            >
-                                {AI_STYLES.map(s => <option key={s.label} value={s.value}>{s.label} Style</option>)}
-                            </select>
-                            <textarea
-                                placeholder="Describe an image to color (e.g. 'A cute baby dragon sitting on a pile of gold coins')"
-                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:outline-none min-h-[80px] text-sm resize-none text-gray-200"
-                                value={genPrompt}
-                                onChange={(e) => setGenPrompt(e.target.value)}
-                            />
-                            <button
-                                onClick={handleGenerate}
-                                disabled={isGenerating || !genPrompt}
-                                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-white"
-                            >
-                                {isGenerating ? 'Dreaming...' : <><Icons.Wand /> Generate Image</>}
-                            </button>
-                        </>
-                    ) : (
-                        <div className="space-y-4 animate-fade-in">
-                            <div className="relative rounded-lg overflow-hidden border-2 border-indigo-500/50">
-                                <img src={generatedPreview} className="w-full h-48 object-cover" alt="Generated Preview" />
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => {
-                                        setSourceImage(generatedPreview);
-                                        setGeneratedPreview(null);
-                                        setGenPrompt('');
-                                    }}
-                                    className="flex-1 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold text-white shadow-lg"
-                                >
-                                    Use This Image
-                                </button>
-                                <button
-                                    onClick={() => setGeneratedPreview(null)}
-                                    className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium text-gray-300"
-                                >
-                                    Try Again
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                  {!generatedPreview ? (
+                    <>
+                      <select
+                        value={selectedStyle}
+                        onChange={(e) => setSelectedStyle(e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none mb-2"
+                      >
+                        {AI_STYLES.map(s => <option key={s.label} value={s.value}>{s.label} Style</option>)}
+                      </select>
+                      <textarea
+                        placeholder="Describe an image to color (e.g. 'A cute baby dragon sitting on a pile of gold coins')"
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:outline-none min-h-[80px] text-sm resize-none text-gray-200"
+                        value={genPrompt}
+                        onChange={(e) => setGenPrompt(e.target.value)}
+                      />
+                      <button
+                        onClick={handleGenerate}
+                        disabled={isGenerating || !genPrompt}
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-white"
+                      >
+                        {isGenerating ? 'Dreaming...' : <><Icons.Wand /> Generate Image</>}
+                      </button>
+                    </>
+                  ) : (
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="relative rounded-lg overflow-hidden border-2 border-indigo-500/50">
+                        <img src={generatedPreview} className="w-full h-48 object-cover" alt="Generated Preview" />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setSourceImage(generatedPreview);
+                            setGeneratedPreview(null);
+                            setGenPrompt('');
+                          }}
+                          className="flex-1 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold text-white shadow-lg"
+                        >
+                          Use This Image
+                        </button>
+                        <button
+                          onClick={() => setGeneratedPreview(null)}
+                          className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium text-gray-300"
+                        >
+                          Try Again
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -432,224 +432,234 @@ const App: React.FC = () => {
   }
 
   if (stage === AppStage.PROCESSING && !processedData) {
-     return (
-         <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center space-y-6">
-             <div className="w-20 h-20 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-             <div className="text-center">
-                 <h2 className="text-2xl font-bold text-white mb-2">Analyzing Image Topology</h2>
-                 <p className="text-gray-500">Generating vector regions and palette...</p>
-             </div>
-         </div>
-     )
+    return (
+      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center space-y-6">
+        <div className="w-20 h-20 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-white mb-2">Analyzing Image Topology</h2>
+          <p className="text-gray-500">Generating vector regions and palette...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="h-screen w-screen flex bg-gray-950 overflow-hidden text-gray-200 font-sans">
-        <ToastContainer toasts={toasts} removeToast={removeToast} />
-        
-        {/* Celebration Modal */}
-        {showCelebration && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
-                <div className="bg-gradient-to-br from-purple-900 to-indigo-900 p-10 rounded-3xl text-center shadow-2xl border border-purple-500/50 max-w-md mx-4">
-                    <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 mb-4">
-                        Outstanding!
-                    </h2>
-                    <p className="text-gray-200 text-lg mb-8">You've completed the artwork with 100% accuracy.</p>
-                    <div className="flex gap-4 justify-center">
-                        <button 
-                            onClick={downloadImage}
-                            className="px-6 py-3 bg-white text-purple-900 font-bold rounded-xl shadow-lg hover:scale-105 transition-transform"
-                        >
-                            Save Masterpiece
-                        </button>
-                        <button 
-                            onClick={() => setShowCelebration(false)}
-                            className="px-6 py-3 bg-purple-800/50 text-purple-200 font-bold rounded-xl hover:bg-purple-800 transition-colors"
-                        >
-                            Keep Admiring
-                        </button>
-                    </div>
-                </div>
+    <div className="h-screen w-screen flex flex-col md:flex-row bg-gray-950 overflow-hidden text-gray-200 font-sans">
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+      {/* Celebration Modal */}
+      {showCelebration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 p-10 rounded-3xl text-center shadow-2xl border border-purple-500/50 max-w-md mx-4">
+            <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 mb-4">
+              Outstanding!
+            </h2>
+            <p className="text-gray-200 text-lg mb-8">You've completed the artwork with 100% accuracy.</p>
+            <div className="flex gap-4 justify-center">
+              <button
+                onClick={downloadImage}
+                className="px-6 py-3 bg-white text-purple-900 font-bold rounded-xl shadow-lg hover:scale-105 transition-transform"
+              >
+                Save Masterpiece
+              </button>
+              <button
+                onClick={() => setShowCelebration(false)}
+                className="px-6 py-3 bg-purple-800/50 text-purple-200 font-bold rounded-xl hover:bg-purple-800 transition-colors"
+              >
+                Keep Admiring
+              </button>
             </div>
-        )}
+          </div>
+        </div>
+      )}
 
-        <aside className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 z-20 shadow-2xl">
-            <div className="p-4 border-b border-gray-800">
-                <div className="flex items-center justify-between mb-4">
-                    <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">
-                        ChromaNumber
-                    </h1>
-                    <button 
-                        onClick={() => {
-                            if(confirm("Exit? Progress lost.")) {
-                                setStage(AppStage.UPLOAD);
-                                setSourceImage(null);
-                                setProcessedData(null);
-                            }
-                        }}
-                        className="p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition"
-                        title="Back to Menu"
-                    >
-                        <Icons.Undo />
-                    </button>
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-semibold uppercase text-gray-500">
-                        <span>Completion</span>
-                        <span>{Math.round(progress)}%</span>
-                    </div>
-                    <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-                        <div 
-                            className="h-full bg-gradient-to-r from-green-400 to-emerald-600 transition-all duration-500 ease-out" 
-                            style={{width: `${progress}%`}}
-                        />
-                    </div>
-                </div>
+      <aside className="w-full md:w-80 h-1/3 md:h-full bg-gray-900 border-b md:border-b-0 md:border-r border-gray-800 flex flex-col shrink-0 z-20 shadow-2xl">
+        <div className="p-4 border-b border-gray-800 flex items-center justify-between sticky top-0 bg-gray-900 z-10">
+          <div className="flex items-center gap-3">
+            <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 hidden sm:block md:block">
+              ChromaNumber
+            </h1>
+            <div className="flex items-center gap-2 md:hidden">
+              <span className="text-xs font-bold text-gray-400">{Math.round(progress)}%</span>
+              <div className="w-16 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-green-400 to-emerald-600" style={{ width: `${progress}%` }} />
+              </div>
             </div>
+          </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
-                <div className="grid grid-cols-2 gap-2">
-                   <button 
-                     onPointerDown={() => setShowOriginal(true)}
-                     onPointerUp={() => setShowOriginal(false)}
-                     onPointerLeave={() => setShowOriginal(false)}
-                     className={`flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all select-none ${showOriginal ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/50 scale-95' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 active:scale-95'}`}
-                   >
-                     <Icons.Eye /> Hold to View
-                   </button>
-                   
-                   <button 
-                     onClick={downloadImage}
-                     className="flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium transition-all"
-                   >
-                     <Icons.Download /> Save
-                   </button>
-                </div>
+          <button
+            onClick={() => {
+              if (confirm("Exit? Progress lost.")) {
+                setStage(AppStage.UPLOAD);
+                setSourceImage(null);
+                setProcessedData(null);
+              }
+            }}
+            className="p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition"
+            title="Back to Menu"
+          >
+            <Icons.Undo />
+          </button>
+        </div>
 
-                {/* Tool Selector */}
-                <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Tools</h3>
-                    <div className="flex gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700">
-                        <button
-                            onClick={() => setActiveTool(ToolMode.FILL)}
-                            className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
-                            title="Fill Mode"
-                        >
-                            <Icons.Bucket />
-                            <span className="text-xs font-medium">Fill</span>
-                        </button>
-                        <button
-                            onClick={() => setActiveTool(ToolMode.PAN)}
-                            className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
-                            title="Pan Mode"
-                        >
-                            <Icons.Hand />
-                            <span className="text-xs font-medium">Pan</span>
-                        </button>
-                    </div>
-                </div>
+        <div className="md:hidden hidden">
+          {/* Mobile Header hidden to allow custom compact header above */}
+        </div>
 
-                <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Settings</h3>
-                    <div className="flex gap-2 flex-wrap">
-                        <button 
-                            onClick={() => setToolConfig(p => ({...p, showNumbers: !p.showNumbers}))}
-                            className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showNumbers ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}
-                        >
-                            # Numbers
-                        </button>
-                        <button 
-                            onClick={() => setToolConfig(p => ({...p, showBorders: !p.showBorders}))}
-                            className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showBorders ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}
-                        >
-                            Borders
-                        </button>
-                         <button 
-                            onClick={() => setToolConfig(p => ({...p, highlightActive: !p.highlightActive}))}
-                            className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.highlightActive ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}
-                            title="Highlight all regions of the active color"
-                        >
-                            Highlight
-                        </button>
-                    </div>
-                </div>
+        <div className="hidden md:block p-4 border-b border-gray-800">
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs font-semibold uppercase text-gray-500">
+              <span>Completion</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-green-400 to-emerald-600 transition-all duration-500 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        </div>
 
-                <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Palette Style</h3>
-                    <div className="grid grid-cols-1 gap-2">
-                        {Object.values(PaletteTheme).map(theme => (
-                            <button
-                                key={theme}
-                                onClick={() => setActiveTheme(theme)}
-                                className={`px-3 py-2 text-left text-sm rounded-md transition-colors ${activeTheme === theme ? 'bg-gray-700 text-white ring-1 ring-white/20' : 'text-gray-400 hover:bg-gray-800'}`}
-                            >
-                                {theme.charAt(0) + theme.slice(1).toLowerCase()}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onPointerDown={() => setShowOriginal(true)}
+              onPointerUp={() => setShowOriginal(false)}
+              onPointerLeave={() => setShowOriginal(false)}
+              className={`flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all select-none ${showOriginal ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/50 scale-95' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 active:scale-95'}`}
+            >
+              <Icons.Eye /> <span className="hidden sm:inline">View</span>
+            </button>
 
-                <div className="space-y-3 pb-4">
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Colors</h3>
-                    <div className="grid grid-cols-4 gap-2">
-                        {currentPalette.map((color) => {
-                            const isActive = activeColor?.id === color.id;
-                            const pixelsFilled = colorProgressMap.get(color.id) || 0;
-                            const isComplete = pixelsFilled >= color.count;
-                            const percentage = Math.min(100, (pixelsFilled / color.count) * 100);
-                            
-                            return (
-                                <button
-                                    key={color.id}
-                                    onClick={() => setActiveColor(color)}
-                                    className={`
+            <button
+              onClick={downloadImage}
+              className="flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium transition-all"
+            >
+              <Icons.Download /> <span className="hidden sm:inline">Save</span>
+            </button>
+          </div>
+
+          {/* Tool Selector */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider hidden md:block">Tools</h3>
+            <div className="flex gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700">
+              <button
+                onClick={() => setActiveTool(ToolMode.FILL)}
+                className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                title="Fill Mode"
+              >
+                <Icons.Bucket />
+                <span className="text-xs font-medium">Fill</span>
+              </button>
+              <button
+                onClick={() => setActiveTool(ToolMode.PAN)}
+                className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                title="Pan Mode"
+              >
+                <Icons.Hand />
+                <span className="text-xs font-medium">Pan</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider hidden md:block">Settings</h3>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))}
+                className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showNumbers ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}
+              >
+                # 123
+              </button>
+              <button
+                onClick={() => setToolConfig(p => ({ ...p, showBorders: !p.showBorders }))}
+                className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showBorders ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}
+              >
+                <span className="border border-current w-3 h-3 inline-block mr-1"></span>
+              </button>
+              <button
+                onClick={() => setToolConfig(p => ({ ...p, highlightActive: !p.highlightActive }))}
+                className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.highlightActive ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}
+                title="Highlight all regions of the active color"
+              >
+                ★
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3 hidden md:block">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Palette Style</h3>
+            <div className="grid grid-cols-1 gap-2">
+              {Object.values(PaletteTheme).map(theme => (
+                <button
+                  key={theme}
+                  onClick={() => setActiveTheme(theme)}
+                  className={`px-3 py-2 text-left text-sm rounded-md transition-colors ${activeTheme === theme ? 'bg-gray-700 text-white ring-1 ring-white/20' : 'text-gray-400 hover:bg-gray-800'}`}
+                >
+                  {theme.charAt(0) + theme.slice(1).toLowerCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3 pb-4">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider hidden md:block">Colors</h3>
+            <div className="grid grid-cols-5 md:grid-cols-4 gap-2">
+              {currentPalette.map((color) => {
+                const isActive = activeColor?.id === color.id;
+                const pixelsFilled = colorProgressMap.get(color.id) || 0;
+                const isComplete = pixelsFilled >= color.count;
+                const percentage = Math.min(100, (pixelsFilled / color.count) * 100);
+
+                return (
+                  <button
+                    key={color.id}
+                    onClick={() => setActiveColor(color)}
+                    className={`
                                         aspect-square rounded-lg flex flex-col items-center justify-center relative group overflow-hidden
                                         transition-all duration-200
                                         ${isActive ? 'ring-2 ring-white scale-105 z-10 shadow-xl' : 'opacity-80 hover:opacity-100 hover:scale-105'}
                                     `}
-                                    style={{ backgroundColor: color.hex }}
-                                >
-                                    <span className={`text-xs font-bold z-10 ${(color.rgb.r+color.rgb.g+color.rgb.b) > 400 ? 'text-black' : 'text-white'}`}>
-                                        {isComplete ? <Icons.Check /> : color.id}
-                                    </span>
-                                    
-                                    {/* Mini Progress Bar */}
-                                    <div className="absolute bottom-0 left-0 w-full h-1 bg-black/20">
-                                        <div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${percentage}%` }} />
-                                    </div>
-                                </button>
-                            );
-                        })}
+                    style={{ backgroundColor: color.hex }}
+                  >
+                    <span className={`text-xs font-bold z-10 ${(color.rgb.r + color.rgb.g + color.rgb.b) > 400 ? 'text-black' : 'text-white'}`}>
+                      {isComplete ? <Icons.Check /> : color.id}
+                    </span>
+
+                    {/* Mini Progress Bar */}
+                    <div className="absolute bottom-0 left-0 w-full h-1 bg-black/20">
+                      <div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${percentage}%` }} />
                     </div>
-                </div>
-
+                  </button>
+                );
+              })}
             </div>
-        </aside>
+          </div>
 
-        <main className="flex-1 bg-gray-800 relative shadow-inner">
-             {processedData && (
-                <ColoringCanvas 
-                    data={processedData} 
-                    palette={currentPalette}
-                    activeColor={activeColor} 
-                    config={toolConfig}
-                    activeTool={activeTool}
-                    filledRegions={filledRegions}
-                    onFillRegion={(id) => {
-                        const next = new Set(filledRegions);
-                        next.add(id);
-                        setFilledRegions(next);
-                        
-                        // Auto-switch logic (optional improvement: switch when color complete)
-                        // For now we keep it manual to avoid jarring UX
-                    }}
-                    showOriginal={showOriginal}
-                    originalImageSrc={sourceImage}
-                    onToast={addToast}
-                />
-            )}
-        </main>
+        </div>
+      </aside>
+
+      <main className="flex-1 bg-gray-800 relative shadow-inner overflow-hidden">
+        {processedData && (
+          <ColoringCanvas
+            data={processedData}
+            palette={currentPalette}
+            activeColor={activeColor}
+            config={toolConfig}
+            activeTool={activeTool}
+            filledRegions={filledRegions}
+            onFillRegion={(id) => {
+              const next = new Set(filledRegions);
+              next.add(id);
+              setFilledRegions(next);
+            }}
+            showOriginal={showOriginal}
+            originalImageSrc={sourceImage}
+            onToast={addToast}
+          />
+        )}
+      </main>
     </div>
   );
 };
