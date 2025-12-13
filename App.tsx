@@ -290,9 +290,9 @@ const App: React.FC = () => {
 
   if (stage === AppStage.UPLOAD) {
     return (
-      <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center justify-center p-4">
+      <div className="h-screen w-screen bg-gray-950 text-gray-100 overflow-y-auto custom-scrollbar flex flex-col p-4">
         <ToastContainer toasts={toasts} removeToast={removeToast} />
-        <div className="max-w-xl w-full space-y-8">
+        <div className="max-w-xl w-full mx-auto my-auto space-y-8 py-8">
           <div className="text-center">
             <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 mb-4">
               ChromaNumber
