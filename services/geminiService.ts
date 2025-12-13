@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY || '';
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
 export const remixImage = async (
@@ -13,7 +13,7 @@ export const remixImage = async (
     // Clean base64 string if it has prefix
     const data = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
-    const modelId = 'gemini-2.5-flash-image'; 
+    const modelId = 'gemini-2.5-flash-image';
 
     const finalPrompt = `Redraw this image with the following changes: ${prompt}. ${styleModifier}. 
     Keep the composition clear and suitable for a color-by-numbers conversion. 
@@ -53,7 +53,7 @@ export const remixImage = async (
 export const generateImageFromPrompt = async (prompt: string, styleModifier: string): Promise<string | null> => {
   try {
     const modelId = 'gemini-2.5-flash-image';
-    
+
     const finalPrompt = `${prompt}. ${styleModifier}. Create a clear composition suitable for coloring.`;
 
     const response = await ai.models.generateContent({
