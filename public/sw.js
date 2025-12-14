@@ -1,8 +1,7 @@
-const CACHE_NAME = 'chromanumber-v1';
+const CACHE_NAME = 'chromanumber-v2';
 const urlsToCache = [
     './',
-    './index.html',
-    'https://cdn.tailwindcss.com'
+    './index.html'
 ];
 
 self.addEventListener('install', event => {
