@@ -351,6 +351,19 @@ const App: React.FC = () => {
                 ChromaNumber
               </h1>
               <p className="text-gray-400 text-lg">AI-Powered Precision Coloring</p>
+
+              <div className="flex justify-center pt-4">
+                {user ? (
+                  <div className="flex items-center gap-4 bg-gray-900 rounded-full px-6 py-2 border border-gray-800">
+                    <span className="text-green-400 font-bold text-sm">● Logged In</span>
+                    <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-white underline">Logout</button>
+                  </div>
+                ) : (
+                  <button onClick={handleLogin} className="px-6 py-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/50 rounded-full text-sm font-bold transition-all">
+                    Login to Save Progress
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="bg-gray-900 rounded-2xl p-8 shadow-2xl border border-gray-800 space-y-6">
