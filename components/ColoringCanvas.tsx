@@ -19,7 +19,7 @@ interface ColoringCanvasProps {
     onPan: (x: number, y: number) => void;
 }
 
-const PAINT_BUCKET_CURSOR = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v20" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.8"/><path d="M12 3v18" stroke="black" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.5" fill="white"/><circle cx="12" cy="12" r="1.5" fill="#ef4444"/></svg>') 12 12, auto`;
+const PAINT_BUCKET_CURSOR = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v20 M2 12h20" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.8"/><path d="M12 3v18 M3 12h18" stroke="black" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.5" fill="white"/><circle cx="12" cy="12" r="1.5" fill="#ef4444"/></svg>') 12 12, auto`;
 
 // Animation types
 interface Ripple {
