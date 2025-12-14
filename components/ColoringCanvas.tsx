@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { ProcessedImage, PaletteColor, ToolConfig, ToolMode } from '../types';
 
 interface ColoringCanvasProps {
@@ -51,6 +51,10 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
+    // Performance Optimization: Offscreen Canvas Cache
+    const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const lastFilledRegionsRef = useRef<Set<number>>(new Set());
+
     // Keyboard Modifiers
     const [isSpaceHeld, setIsSpaceHeld] = useState(false);
 
@@ -87,72 +91,183 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         setHintIndex(0);
     }, [activeColor]);
 
-    // --- Drawing Logic ---
+    // --- Cache Initialization & Update ---
+    useEffect(() => {
+        // Init Offscreen Canvas
+        if (!offscreenCanvasRef.current) {
+            offscreenCanvasRef.current = document.createElement('canvas');
+            offscreenCanvasRef.current.width = data.originalWidth;
+            offscreenCanvasRef.current.height = data.originalHeight;
+        } else if (offscreenCanvasRef.current.width !== data.originalWidth || offscreenCanvasRef.current.height !== data.originalHeight) {
+            offscreenCanvasRef.current.width = data.originalWidth;
+            offscreenCanvasRef.current.height = data.originalHeight;
+            lastFilledRegionsRef.current = new Set(); // Reset cache tracker if size changes
+        }
+
+        const ctx = offscreenCanvasRef.current.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+
+        const w = data.originalWidth;
+        const h = data.originalHeight;
+
+        // If this is a fresh init or full reset (e.g. undo all used to be empty, now filledRegions size is 0 but last was > 0)
+        // Or specific regions added.
+
+        // Simple strategy: 
+        // 1. If lastFilledRegions is empty -> Draw Background + Borders.
+        // 2. If filledRegions grew -> Draw ONLY new regions.
+        // 3. If filledRegions shrank (Undo) -> Full Redraw (Can be optimized later but undo is rare).
+        // 4. If Palette changes -> Full Redraw (Theme change).
+
+        const isFullRedraw = lastFilledRegionsRef.current.size === 0 ||
+            filledRegions.size < lastFilledRegionsRef.current.size ||
+            // Detect Palette Change? We rely on 'palette' dependency in useEffect. 
+            // If palette changes, we probably need full redraw. 
+            // But we can't easily detect 'palette changed' vs 'filledRegions changed' inside one effect unless we split them or use refs.
+            // Let's assume performant partial updates for fills, full redraw for everything else.
+            true; // For now, let's optimize the loop inside.
+
+        // Optimization: Delta updates
+        // To do delta updates correctly, we need to know exactly WHICH ID was added.
+        // Comparing Sets is O(N).
+        // For now, let's do a smart redraw:
+        // Always redraw background + filled regions. It's faster than `putImageData` for every pixel if we do it in one pass using typed arrays?
+        // NO. The whole point is to AVOID iterating all regions.
+
+        // Let's use `isFullRedraw` logic properly.
+        const prevSize = lastFilledRegionsRef.current.size;
+        const currSize = filledRegions.size;
+
+        // We need to check if we can do partial update.
+        // Only if (curr > prev) AND (palette matches? We'll assume palette serves as key for effect re-run).
+
+        // Actually, let's just use a persistent ImageData buffer?
+        // No, using canvas 2D generic drawing for caching is standard.
+
+        // Re-implementing Full Redraw for correctness first, but optimizing the method.
+        // Then partials.
+
+        // To make it FAST:
+        // 1. Create ImageData ONCE.
+        // 2. Mutate it.
+        // 3. Put it back.
+
+        const imgData = ctx.getImageData(0, 0, w, h); // Read current state? No, read blank if full redraw.
+        const buf = new Uint32Array(imgData.data.buffer);
+
+        if (prevSize === 0 || currSize < prevSize) {
+            // Full Clear
+            buf.fill(0xFFFFFFFF); // White
+        }
+
+        // We need to identify New Regions vs All Regions.
+        // If we clear, we loop ALL filledRegions.
+        // If we partial, we need 'added' regions.
+
+        // Let's stick to a reasonably fast Full Redraw of the backing buffer for now, 
+        // because `data.regions.forEach` is fast enough (JS loop), the bottleneck was `putImageData` happening on EVERY ANIMATION FRAME.
+        // By moving it to this useEffect, we ONLY do it when state changes, NOT when ripples animate.
+        // This alone sends performance from "Laggy" to "Smooth" during animations.
+
+        // So, FULL REDRAW of caching canvas here is fine, as long as it's not in `draw()`.
+
+        // 1. Clear/Init
+        if (prevSize === 0 || currSize < prevSize) {
+            buf.fill(0xFFFFFFFF);
+
+            // Borders (rendering borders into cache is good)
+            if (config.showBorders) {
+                // Grey borders
+                const borderVal = (255 << 24) | (219 << 16) | (213 << 8) | 209; // #d1d5db / 209, 213, 219
+                data.regions.forEach(region => {
+                    if (!filledRegions.has(region.id)) {
+                        for (const pIdx of region.borderPixels) buf[pIdx] = borderVal;
+                    }
+                });
+            }
+        }
+
+        // 2. Draw Fills
+        // If we cleared, we draw all.
+        // If we didn't clear, we only draw new ones... but finding new ones is O(N) Set diff.
+        // If we just draw ALL filled regions every time state changes, is it too slow?
+        // For 1000 regions, yes.
+        // BUT, we only do this on CLICK. Not on hover/animate. So 60fps is not required here. Instant response is required.
+        // 100ms is acceptable. 16ms is better.
+
+        // Optimization: Only iterate if needed?
+        // Let's iterate ALL filled regions for robustness.
+        filledRegions.forEach(rId => {
+            const region = data.regions.find(r => r.id === rId);
+            if (region) {
+                const c = palette[region.colorId].rgb;
+                // ABGR for little endian
+                const colorVal = (255 << 24) | (c.b << 16) | (c.g << 8) | c.r;
+                for (const pIdx of region.pixels) buf[pIdx] = colorVal;
+            }
+        });
+
+        ctx.putImageData(imgData, 0, 0);
+        lastFilledRegionsRef.current = new Set(filledRegions);
+
+    }, [filledRegions, data, palette, config.showBorders]);
+
+    // --- Drawing Logic (The Render Loop) ---
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Clear
+        // Clear Main Canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         const w = data.originalWidth;
-        const imgData = ctx.createImageData(w, data.originalHeight);
-        const buf = new Uint32Array(imgData.data.buffer);
 
-        // Background
-        buf.fill(0xFFFFFFFF);
+        // 1. Draw Cached Layer (Background + Fills + Borders)
+        if (offscreenCanvasRef.current) {
+            ctx.drawImage(offscreenCanvasRef.current, 0, 0);
+        }
 
-        // Filled Regions
-        data.regions.forEach(region => {
-            const isFilled = filledRegions.has(region.id);
-            let r = 255, g = 255, b = 255;
-
-            if (isFilled) {
-                const c = palette[region.colorId].rgb;
-                r = c.r; g = c.g; b = c.b;
-            }
-
-            const colorVal = (255 << 24) | (b << 16) | (g << 8) | r;
-            if (isFilled) {
-                for (const pIdx of region.pixels) buf[pIdx] = colorVal;
-            }
-        });
-
-        ctx.putImageData(imgData, 0, 0);
-
-        // Highlight Active Color
+        // 2. Highlight Active Color (Dynamic)
         if (config.highlightActive && activeColor) {
             ctx.fillStyle = activeColor.hex + '66'; // 40% opacity
+            // This loop is unavoidable for dynamic highlight, but it's only for ONE color ID.
+            // Optimization: Filter regions first? No, iterate map/array? Data.regions is array.
+            // Can we pre-group regions by ColorID? That would be O(1) lookup.
+            // Doing O(N) here is okay-ish if N < 5000.
+
+            // Optimization: Skip if zoomed out? No, users need highlight to find.
             data.regions.forEach(region => {
                 if (!filledRegions.has(region.id) && region.colorId === activeColor.id - 1) {
                     for (const pIdx of region.pixels) {
+                        // Draw rects is slow. But we can't use putImageData easily on top of existing context without readback.
+                        // Actually, drawing thousands of 1x1 rects is THE KILLER.
+                        // Better: Create a temporary ImageData, fill it transparent, paint pixels, putImageData.
+
+                        // Since we are clearing canvas, we can't just overwrite.
+                        // But we can `ctx.fillRect`.
+                        // Note: `fillRect` is GPU accelerated but overhead of call is high.
+                        // Pixel manipulation on CPU -> putImageData is usually faster for pixel art.
+
+                        // HYBRID approach:
+                        // We are already using `drawImage` for base.
+                        // Let's try `ctx.fillRect` first. If it lags, we optimize.
+                        // The original code handled this inside the main loop.
+
                         ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
                     }
                 }
             });
         }
 
-        // Borders
-        if (config.showBorders) {
-            ctx.fillStyle = '#d1d5db';
-            data.regions.forEach(region => {
-                if (!filledRegions.has(region.id)) {
-                    for (const pIdx of region.borderPixels) {
-                        ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
-                    }
-                }
-            });
-        }
-
-        // Flash Error
+        // 3. Flash Error
         if (flashRegion) {
             const now = performance.now();
             const diff = now - flashRegion.start;
             if (diff < 400) {
                 const alpha = Math.max(0, 1 - diff / 400);
-                const region = data.regions.find(r => r.id === flashRegion.id);
+                const region = data.regions.find(r => r.id === flashRegion!.id);
                 if (region) {
                     ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
                     for (const pIdx of region.pixels) {
@@ -164,7 +279,7 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             }
         }
 
-        // Ripples
+        // 4. Ripples
         if (ripplesRef.current.length > 0) {
             ripplesRef.current.forEach((ripple, idx) => {
                 ctx.beginPath();
@@ -178,41 +293,37 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                 ripple.r += 2 / scale; // Scale speed relative to zoom
                 ripple.alpha -= 0.05;
             });
-            // Cleanup
             ripplesRef.current = ripplesRef.current.filter(r => r.alpha > 0);
         }
 
-        // Numbers
+        // 5. Numbers
         if (config.showNumbers) {
             const fontSize = Math.max(12, Math.floor(data.originalWidth / 120));
-            // Adjust font size based on zoom scale, but clamp it to avoid massive text
-            // We want text to stay relatively consistent in world space, but readable.
+            // Viewport Culling
+            // Calculate visible bounds in world coordinates
+            const viewportLeft = -offset.x / scale;
+            const viewportTop = -offset.y / scale;
+            const viewportRight = (containerRef.current?.clientWidth || 0) / scale + viewportLeft;
+            const viewportBottom = (containerRef.current?.clientHeight || 0) / scale + viewportTop;
 
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
             data.regions.forEach(region => {
+                // Cull invisible regions
+                if (region.centroid.x < viewportLeft || region.centroid.x > viewportRight ||
+                    region.centroid.y < viewportTop || region.centroid.y > viewportBottom) {
+                    return;
+                }
+
                 const isFilled = filledRegions.has(region.id);
 
-                // Only show numbers if not filled OR if filled but we want to see them (usually we hide them)
-                // Standard UX: Hide number when filled.
+                // Only show numbers if not filled OR if filled but we want to see them
                 if (!isFilled) {
-                    // Visibility Logic:
-                    // If region is tiny and we are zoomed out -> Hide
-                    // If region is tiny and we are zoomed in -> Show
                     const approximateScreenSize = Math.sqrt(region.pixels.length) * scale;
-
                     if (approximateScreenSize > 12) {
                         const paletteColor = palette[region.colorId];
-
-                        // High contrast logic: 
-                        // If the region is highlighted (active color), we need contrast against the highlight color.
-                        // If not highlighted, we need contrast against white (background).
-                        // Actually, simplest is: Active Color -> Black text (because highlight is usually light overlay or we want it to pop).
-                        // Inactive -> Grey text.
-
                         const isActive = activeColor && (region.colorId === activeColor.id - 1);
-
                         if (isActive) {
                             ctx.fillStyle = '#000000';
                             ctx.font = `bold ${fontSize * 1.3}px sans-serif`;
@@ -220,18 +331,14 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                             ctx.fillStyle = '#9ca3af';
                             ctx.font = `bold ${fontSize}px sans-serif`;
                         }
-
                         const num = paletteColor.id;
                         ctx.fillText(num.toString(), region.centroid.x, region.centroid.y);
                     }
                 } else {
-                    // Optional: If filled, show number in contrast color if zoomed in a lot?
-                    // Users complain about not knowing what color a filled region IS.
                     const approximateScreenSize = Math.sqrt(region.pixels.length) * scale;
                     if (approximateScreenSize > 40 && scale > 2) {
-                        // Show number faintly in contrast color
                         const paletteColor = palette[region.colorId];
-                        ctx.fillStyle = paletteColor.textColor; // Smart contrast (White on dark, Black on light)
+                        ctx.fillStyle = paletteColor.textColor;
                         ctx.globalAlpha = 0.5;
                         ctx.font = `bold ${fontSize}px sans-serif`;
                         ctx.fillText(paletteColor.id.toString(), region.centroid.x, region.centroid.y);
@@ -246,18 +353,13 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             animFrameRef.current = requestAnimationFrame(draw);
         }
 
-    }, [data, palette, filledRegions, config, scale, flashRegion, activeColor]);
+    }, [data, palette, filledRegions, config, scale, flashRegion, activeColor, offset]);
 
     // Trigger draw when dependencies change, but use RAF for the heavy lifting inside draw() if needed
     useEffect(() => {
         draw();
-        // No cancel here because draw might be recursive via RAF. 
-        // Actually, we should cancel previous frame to avoid stacking.
         return () => cancelAnimationFrame(animFrameRef.current);
     }, [draw]);
-
-    // Center Image initially Logic Moved to Parent or triggered via Effect? 
-    // Parent handles initial scale/offset.
 
     // --- Hint System (Smart Navigation) ---
     const useHint = () => {
@@ -310,11 +412,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         if (regionId >= 0 && activeColor) {
             const region = data.regions.find(r => r.id === regionId);
             if (region) {
-                // Logic: 
-                // 1. If correct color match -> Fill
-                // 2. If region is ALREADY filled -> Allow overwrite if color is different (Correction mode)
-                // 3. If wrong color -> Flash error
-
                 const isMatch = activeColor.id - 1 === region.colorId;
                 const isAlreadyFilled = filledRegions.has(regionId);
 
@@ -333,28 +430,15 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                         draw(); // Force immediate draw for ripple start
                     }
                 } else {
-                    // Wrong color clicked
                     if (isAlreadyFilled) {
-                        // It's already filled, but maybe they want to change it? 
-                        // Only allow change if the clicked region matches the *active* color (meaning they are fixing a mistake)
-                        // Wait, if I have Red selected, and I click a region that is supposed to be Red but I previously colored Blue...
-                        // The region.colorId is Red.
-                        // So `isMatch` would be true.
-                        // Ah, `isMatch` compares ActiveColor vs TrueRegionColor.
-
-                        // So if `isMatch` is true, we should allow filling even if `isAlreadyFilled` is true.
                         if (isMatch) {
-                            // Correcting a mistake
-                            onFillRegion(regionId); // Logic in App.tsx handles Set addition, which is idempotent. 
-                            // But we need a way to say "Update visual". The Set handles existence. 
-                            // Since it's already in the Set, we just need the Ripple to show "Good job fixing it".
+                            onFillRegion(regionId); // No-op logic but triggers UI feedback
                             ripplesRef.current.push({
                                 x: x, y: y, r: 5, color: activeColor.hex, alpha: 1.0, id: Date.now()
                             });
                             draw();
                         }
                     } else {
-                        // Not filled, and wrong color. Flash error.
                         setFlashRegion({ id: regionId, start: performance.now() });
                     }
                 }
@@ -415,11 +499,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
     };
 
     const handleTouchStart = (e: React.TouchEvent) => {
-        // Prevent default browser zooming/scrolling
-        // Note: 'passive: false' is needed in the event listener if we were attaching manually, 
-        // but React handles this. We might need CSS 'touch-action: none' on the container.
-        // e.preventDefault(); // Often better handled by CSS touch-action
-
         if (e.touches.length === 2) {
             isPinchingRef.current = true;
             touchStartDistRef.current = getTouchDistance(e.touches[0], e.touches[1]);
@@ -429,13 +508,12 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             isPinchingRef.current = false;
             lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
 
-            // If we are in PAN mode, start dragging
             if (effectiveTool === ToolMode.PAN) {
                 isDraggingRef.current = true;
-                offsetStartRef.current = { x: offset.x, y: offset.y }; // Relative to current
+                offsetStartRef.current = { x: offset.x, y: offset.y };
                 dragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             }
-            isDraggingRef.current = true; // Assume drag potential
+            isDraggingRef.current = true;
             dragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             offsetStartRef.current = { ...offset };
         }
@@ -443,20 +521,12 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
 
     const handleTouchMove = (e: React.TouchEvent) => {
         if (e.touches.length === 2 && isPinchingRef.current) {
-            // Pinch Zoom + Pan
             const dist = getTouchDistance(e.touches[0], e.touches[1]);
             const center = getTouchCenter(e.touches[0], e.touches[1]);
 
-            // Zoom
-            // const zoomFactor = dist / touchStartDistRef.current;
-            // const newScale = Math.max(0.1, Math.min(10, scale * zoomFactor));
-
-            // Actually simpler: Just Scale.
-            // User can Pan separately.
             onZoom(Math.max(0.1, Math.min(10, scale * (dist / touchStartDistRef.current))));
-            touchStartDistRef.current = dist; // Reset base for next frame
+            touchStartDistRef.current = dist;
 
-            // Also Pan?
             if (lastTouchRef.current) {
                 const dx = center.x - lastTouchRef.current.x;
                 const dy = center.y - lastTouchRef.current.y;
@@ -466,7 +536,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
 
             e.preventDefault();
         } else if (e.touches.length === 1 && isDraggingRef.current) {
-            // One Finger Pan
             const t = e.touches[0];
             const dx = t.clientX - lastTouchRef.current!.x;
             const dy = t.clientY - lastTouchRef.current!.y;
@@ -481,13 +550,11 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         touchStartCenterRef.current = null;
 
         if (isDraggingRef.current && e.changedTouches.length === 1 && e.touches.length === 0) {
-            // Check if it was a Tap (minimal movement)
             const start = dragStartRef.current;
             const end = e.changedTouches[0];
             const dist = Math.hypot(end.clientX - start.x, end.clientY - start.y);
 
             if (dist < 10) {
-                // Click / Tap
                 performFill(end.clientX, end.clientY);
             }
         }
