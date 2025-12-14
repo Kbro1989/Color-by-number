@@ -56,6 +56,17 @@ export interface ToolConfig {
   highlightActive: boolean; // Highlights unfilled regions of active color
 }
 
+export interface SessionData {
+  version: number;
+  artistName: string;
+  timestamp: number;
+  sourceImage: string; // Base64
+  processedData: ProcessedImage;
+  filledRegions: number[]; // Array of IDs (serialized Set)
+  activeTheme: PaletteTheme;
+  toolConfig: ToolConfig;
+}
+
 export type ToastType = 'success' | 'error' | 'info';
 
 export interface ToastMessage {

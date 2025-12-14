@@ -19,7 +19,7 @@ interface ColoringCanvasProps {
     onPan: (x: number, y: number) => void;
 }
 
-const PAINT_BUCKET_CURSOR = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(1px 1px 1px rgba(0,0,0,0.4));"><path d="M19 11l-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11z"/><path d="M5 2l5 5"/><path d="M2 13l2.6-2.6"/><path d="M22 13a3 3 0 0 0-3 3 7 7 0 0 1-7 7"/></svg>') 0 22, auto`;
+const PAINT_BUCKET_CURSOR = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v20" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.8"/><path d="M12 3v18" stroke="black" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.5" fill="white"/><circle cx="12" cy="12" r="1.5" fill="#ef4444"/></svg>') 12 12, auto`;
 
 // Animation types
 interface Ripple {
@@ -460,9 +460,31 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         } else performFill(e.clientX, e.clientY);
     };
 
+    const clampOffset = (targetX: number, targetY: number) => {
+        const BUFFER = 100;
+        const vW = viewportSize.width;
+        const vH = viewportSize.height;
+        const imgW = data.originalWidth * scale;
+        const imgH = data.originalHeight * scale;
+
+        // Ensure at least BUFFER pixels are visible
+        const minX = BUFFER - imgW;
+        const maxX = vW - BUFFER;
+        const minY = BUFFER - imgH;
+        const maxY = vH - BUFFER;
+
+        return {
+            x: Math.max(minX, Math.min(maxX, targetX)),
+            y: Math.max(minY, Math.min(maxY, targetY))
+        };
+    };
+
     const handlePointerMove = (e: React.PointerEvent) => {
         if (isDraggingRef.current && effectiveTool === ToolMode.PAN) {
-            onPan(e.clientX - offsetStartRef.current.x, e.clientY - offsetStartRef.current.y);
+            const rawX = e.clientX - offsetStartRef.current.x;
+            const rawY = e.clientY - offsetStartRef.current.y;
+            const clamped = clampOffset(rawX, rawY);
+            onPan(clamped.x, clamped.y);
         }
     };
 
@@ -506,7 +528,8 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             const t = e.touches[0];
             const dx = t.clientX - lastTouchRef.current!.x;
             const dy = t.clientY - lastTouchRef.current!.y;
-            onPan(offset.x + dx, offset.y + dy);
+            const clamped = clampOffset(offset.x + dx, offset.y + dy);
+            onPan(clamped.x, clamped.y);
             lastTouchRef.current = { x: t.clientX, y: t.clientY };
         }
     };

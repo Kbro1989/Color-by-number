@@ -1,11 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createClient } from "@openauthjs/openauth/client";
-import { AppStage, ProcessedImage, PaletteColor, ToolConfig, PaletteTheme, ToolMode, ToastMessage, AI_STYLES } from './types';
+import { AppStage, ProcessedImage, PaletteColor, ToolConfig, PaletteTheme, ToolMode, ToastMessage, AI_STYLES, SessionData } from './types';
 import { processImageForColoring } from './services/imageProcessor';
 import { remixImage, generateImageFromPrompt } from './services/geminiService';
 import { applyTheme } from './utils/colorThemes';
+import { saveLastSession, loadLastSession, clearSession } from './utils/storage';
 import ColoringCanvas from './components/ColoringCanvas';
 import ToastContainer from './components/ToastContainer';
+import ExportModal from './components/ExportModal';
 
 // SVG Icons
 const Icons = {
@@ -17,7 +19,8 @@ const Icons = {
   Bucket: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11l-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11zM5 2l5 5M2 13l2.6-2.6M22 13a3 3 0 0 0-3 3 7 7 0 0 1-7 7" /></svg>,
   Hand: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>,
   Bulb: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>,
-  Check: () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+  Check: () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>,
+  Save: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
 };
 
 const authClient = createClient({
@@ -31,6 +34,10 @@ const App: React.FC = () => {
   const [processedData, setProcessedData] = useState<ProcessedImage | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Modal State
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [resumeSession, setResumeSession] = useState<SessionData | null>(null);
 
   // Remix & Generation State
   const [remixPrompt, setRemixPrompt] = useState('');
@@ -62,14 +69,8 @@ const App: React.FC = () => {
 
   const centerImage = () => {
     if (processedData) {
-      // We need container dimensions. Since we don't have a ref to the container here easily (it's in the render),
-      // we can approximate or just reset to safe defaults. 
-      // Better: ColoringCanvas uses a Ref. We can pass a callback? 
-      // actually, we can just calculate based on window size for now, or let ColoringCanvas do it on mount via an effect 
-      // BUT we lifted state. So we control it.
-      // Let's assume full screen minus UI.
       const w = window.innerWidth;
-      const h = window.innerHeight; // Approximate
+      const h = window.innerHeight;
       const scaleX = w / processedData.originalWidth;
       const scaleY = h / processedData.originalHeight;
       const startScale = Math.min(scaleX, scaleY, 1) * 0.9;
@@ -86,6 +87,17 @@ const App: React.FC = () => {
     if (processedData) centerImage();
   }, [processedData]);
 
+  // Check for saved session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      const saved = await loadLastSession();
+      if (saved) {
+        setResumeSession(saved);
+      }
+    };
+    checkSession();
+  }, []);
+
   useEffect(() => {
     const initAuth = async () => {
       const token = new URLSearchParams(window.location.search).get("code");
@@ -95,7 +107,9 @@ const App: React.FC = () => {
           if (!code) throw new Error("No code found");
           const exchanged = await authClient.exchange(code, window.location.origin);
           if (exchanged.err) throw exchanged.err;
-          localStorage.setItem("access_token", exchanged.tokens.access);
+          if ('tokens' in exchanged) {
+            localStorage.setItem("access_token", exchanged.tokens.access);
+          }
           window.history.replaceState({}, "", "/");
         } catch (e) {
           console.error(e);
@@ -105,8 +119,6 @@ const App: React.FC = () => {
       const savedToken = localStorage.getItem("access_token");
       if (savedToken) {
         try {
-          // Verify token or fetch user info here (mocked for now as we don't have a userinfo endpoint on the template by default, 
-          // but valid token presence implies login)
           const parts = savedToken.split('.');
           if (parts.length === 3) {
             const payload = JSON.parse(atob(parts[1]));
@@ -145,7 +157,52 @@ const App: React.FC = () => {
 
   const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
 
+  const restoreSession = (data: SessionData) => {
+    setSourceImage(data.sourceImage);
+    setProcessedData(data.processedData);
+    setFilledRegions(new Set(data.filledRegions));
+    setActiveTheme(data.activeTheme);
+    setToolConfig(data.toolConfig);
+
+    // Setup Initial State
+    if (data.processedData.palette.length > 0) {
+      const palette = applyTheme(data.processedData.palette, data.activeTheme);
+      setActiveColor(palette[0]);
+    }
+
+    setStage(AppStage.COLORING);
+    setResumeSession(null);
+    addToast(`Resumed session by ${data.artistName}`, 'success');
+  };
+
+  const loadFromFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const json = JSON.parse(ev.target?.result as string);
+          if (json.version && json.processedData) {
+            restoreSession(json as SessionData);
+          } else {
+            addToast("Invalid session file.", 'error');
+          }
+        } catch (e) {
+          addToast("Could not parse file.", 'error');
+        }
+      };
+      reader.readAsText(e.target.files[0]);
+    }
+  };
+
   // Computed Values
+  const regionsMap = useMemo(() => {
+    const map = new Map();
+    if (processedData) {
+      processedData.regions.forEach(r => map.set(r.id, r));
+    }
+    return map;
+  }, [processedData]);
+
   const currentPalette = useMemo(() => {
     if (!processedData) return [];
     return applyTheme(processedData.palette, activeTheme);
@@ -160,26 +217,25 @@ const App: React.FC = () => {
     processedData.palette.forEach(c => map.set(c.id, 0));
 
     filledRegions.forEach(rId => {
-      const region = processedData.regions.find(r => r.id === rId);
+      const region = regionsMap.get(rId);
       if (region) {
         const cId = processedData.palette[region.colorId].id;
         map.set(cId, (map.get(cId) || 0) + region.pixels.length);
       }
     });
     return map;
-  }, [filledRegions, processedData]);
+  }, [filledRegions, processedData, regionsMap]);
 
   const totalPixels = useMemo(() => processedData ? processedData.originalWidth * processedData.originalHeight : 1, [processedData]);
   const progress = useMemo(() => {
     if (!processedData) return 0;
-    // Calculate based on filled PIXELS not regions for accuracy
     let filledPixels = 0;
     filledRegions.forEach(rId => {
-      const region = processedData.regions.find(r => r.id === rId);
+      const region = regionsMap.get(rId);
       if (region) filledPixels += region.pixels.length;
     });
     return (filledPixels / totalPixels) * 100;
-  }, [filledRegions, processedData, totalPixels]);
+  }, [filledRegions, processedData, totalPixels, regionsMap]);
 
   // Completion Check
   useEffect(() => {
@@ -189,7 +245,6 @@ const App: React.FC = () => {
     }
   }, [progress, stage]);
 
-  // Handlers
   const toggleMobileTab = (tab: 'colors' | 'tools' | 'settings') => {
     setActiveMobileTab(current => current === tab ? 'none' : tab);
   };
@@ -299,83 +354,14 @@ const App: React.FC = () => {
     }
   };
 
-  const downloadImage = () => {
-    if (!processedData) return;
-
-    const canvas = document.createElement('canvas');
-    const w = processedData.originalWidth;
-    const h = processedData.originalHeight;
-    const isComplete = progress > 99;
-
-    const legendWidth = isComplete ? 0 : 300;
-    canvas.width = w + legendWidth;
-    canvas.height = Math.max(h, isComplete ? 0 : currentPalette.length * 40 + 50);
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const imgData = ctx.createImageData(w, h);
-    const buf = new Uint32Array(imgData.data.buffer);
-    buf.fill(0xFFFFFFFF);
-
-    processedData.regions.forEach(region => {
-      const isFilled = filledRegions.has(region.id) || isComplete;
-      let r = 255, g = 255, b = 255;
-
-      if (isFilled) {
-        const c = currentPalette[region.colorId].rgb;
-        r = c.r; g = c.g; b = c.b;
-      }
-      const colorVal = (255 << 24) | (b << 16) | (g << 8) | r;
-      for (const pIdx of region.pixels) buf[pIdx] = colorVal;
-    });
-    ctx.putImageData(imgData, 0, 0);
-
-    if (!isComplete) {
-      ctx.fillStyle = '#cfcfcf';
-      processedData.regions.forEach(region => {
-        if (!filledRegions.has(region.id)) {
-          for (const pIdx of region.borderPixels) ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
-
-          const fontSize = Math.max(10, Math.floor(w / 120));
-          if (region.pixels.length > fontSize * fontSize) {
-            ctx.fillStyle = '#9ca3af';
-            ctx.font = `bold ${fontSize}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(currentPalette[region.colorId].id.toString(), region.centroid.x, region.centroid.y);
-          }
-        }
-      });
-
-      ctx.fillStyle = '#f3f4f6';
-      ctx.fillRect(w, 0, legendWidth, canvas.height);
-
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 20px sans-serif';
-      ctx.fillStyle = '#111827';
-      ctx.fillText("Color Key", w + 20, 40);
-
-      currentPalette.forEach((c, idx) => {
-        const y = 80 + idx * 40;
-        ctx.fillStyle = c.hex;
-        ctx.fillRect(w + 20, y - 20, 30, 30);
-        ctx.strokeStyle = '#000';
-        ctx.strokeRect(w + 20, y - 20, 30, 30);
-
-        ctx.fillStyle = '#000';
-        ctx.font = '16px sans-serif';
-        ctx.fillText(`#${c.id}`, w + 60, y);
+  const onFillRegion = (regionId: number) => {
+    if (!filledRegions.has(regionId) && activeColor) {
+      setFilledRegions(prev => {
+        const next = new Set(prev);
+        next.add(regionId);
+        return next;
       });
     }
-
-    const link = document.createElement('a');
-    link.download = `chroma-${isComplete ? 'final' : 'worksheet'}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-    addToast("Image saved to device.", 'success');
   };
 
   if (stage === AppStage.UPLOAD) {
@@ -383,6 +369,26 @@ const App: React.FC = () => {
       <div className="fixed inset-0 bg-gray-950 text-gray-100 overflow-y-auto custom-scrollbar">
         <div className="min-h-full w-full flex flex-col items-center justify-center p-4 pb-48 md:pb-4">
           <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+          {/* Resume Prompt */}
+          {resumeSession && (
+            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-bounce-in">
+              <div className="bg-indigo-900 border border-indigo-500 rounded-xl p-4 shadow-2xl flex items-center gap-4">
+                <div className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center">
+                  <Icons.Save />
+                </div>
+                <div>
+                  <h4 className="font-bold text-white">Resume previous session?</h4>
+                  <p className="text-xs text-indigo-300">By {resumeSession.artistName} • {new Date(resumeSession.timestamp).toLocaleDateString()}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => restoreSession(resumeSession)} className="px-4 py-2 bg-white text-indigo-900 font-bold rounded-lg text-sm">Resume</button>
+                  <button onClick={async () => { await clearSession(); setResumeSession(null); }} className="px-4 py-2 bg-indigo-800/50 hover:bg-indigo-800 text-indigo-200 rounded-lg text-sm">Discard</button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="max-w-xl w-full space-y-8 py-8">
             <div className="text-center">
               <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 mb-4">
@@ -418,7 +424,6 @@ const App: React.FC = () => {
                   </div>
 
                   <div className="space-y-4">
-                    {/* Style Selector */}
                     <select
                       value={selectedStyle}
                       onChange={(e) => setSelectedStyle(e.target.value)}
@@ -511,17 +516,16 @@ const App: React.FC = () => {
                             onClick={() => {
                               setSourceImage(generatedPreview);
                               setGeneratedPreview(null);
-                              setGenPrompt('');
                             }}
-                            className="flex-1 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold text-white shadow-lg"
+                            className="flex-1 py-3 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors"
                           >
                             Use This Image
                           </button>
                           <button
                             onClick={() => setGeneratedPreview(null)}
-                            className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium text-gray-300"
+                            className="px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-bold transition-colors"
                           >
-                            Try Again
+                            Discard
                           </button>
                         </div>
                       </div>
@@ -529,6 +533,23 @@ const App: React.FC = () => {
                   </div>
                 </>
               )}
+              {/* Add Load File Button below Generate */}
+              <div className="flex items-center gap-4 py-2">
+                <div className="h-px flex-1 bg-gray-800"></div>
+                <span className="text-gray-500 text-xs font-bold tracking-wider">OR LOAD SESSION</span>
+                <div className="h-px flex-1 bg-gray-800"></div>
+              </div>
+
+              <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 flex flex-col items-center text-center">
+                <label className="cursor-pointer">
+                  <input type="file" accept=".json,.chroma" onChange={loadFromFile} className="hidden" />
+                  <div className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-bold text-gray-300 flex items-center gap-2 transition-colors">
+                    <Icons.Upload />
+                    Load .chroma File
+                  </div>
+                </label>
+                <p className="mt-2 text-xs text-gray-500">Restore a previously downloaded session file.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -536,164 +557,132 @@ const App: React.FC = () => {
     );
   }
 
-  if (stage === AppStage.PROCESSING && !processedData) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center space-y-6">
-        <div className="w-20 h-20 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-white mb-2">Analyzing Image Topology</h2>
-          <p className="text-gray-500">Generating vector regions and palette...</p>
-        </div>
-      </div>
-    )
-  }
-
-
-
   return (
     <div className="h-screen w-screen flex flex-col md:flex-row bg-gray-950 overflow-hidden text-gray-200 font-sans relative">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
+      {/* Export Modal */}
+      {processedData && (
+        <ExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          processedData={processedData}
+          palette={currentPalette}
+          filledRegions={filledRegions}
+          sourceImage={sourceImage!}
+          activeTheme={activeTheme}
+          toolConfig={toolConfig}
+          onToast={addToast}
+        />
+      )}
+
       {/* Celebration Modal */}
       {showCelebration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
-          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 p-8 md:p-10 rounded-3xl text-center shadow-2xl border border-purple-500/50 max-w-md w-full">
-            <h2 className="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 mb-4">
-              Outstanding!
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in" onClick={() => setShowCelebration(false)}>
+          <div className="bg-gray-900 p-8 rounded-2xl border-2 border-purple-500 shadow-2xl text-center space-y-4 max-w-sm m-4 transform animate-bounce-in" onClick={e => e.stopPropagation()}>
+            <div className="text-6xl mb-4">🏆</div>
+            <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
+              Masterpiece!
             </h2>
-            <p className="text-gray-200 text-lg mb-8">You've completed the artwork with 100% accuracy.</p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                onClick={downloadImage}
-                className="px-6 py-3 bg-white text-purple-900 font-bold rounded-xl shadow-lg hover:scale-105 transition-transform"
-              >
-                Save Masterpiece
-              </button>
-              <button
-                onClick={() => setShowCelebration(false)}
-                className="px-6 py-3 bg-purple-800/50 text-purple-200 font-bold rounded-xl hover:bg-purple-800 transition-colors"
-              >
-                Keep Admiring
-              </button>
-            </div>
+            <p className="text-gray-300">You've colored all {processedData?.regions.length} regions!</p>
+            <button
+              onClick={() => { setShowCelebration(false); setShowExportModal(true); }}
+              className="px-8 py-3 bg-purple-600 hover:bg-purple-500 rounded-full font-bold shadow-lg shadow-purple-900/50 transition-transform hover:scale-105"
+            >
+              Save & Share
+            </button>
           </div>
         </div>
       )}
 
-      {/* DESKTOP SIDEBAR (Hidden on Mobile) */}
+      {/* DESKTOP SIDEBAR */}
       <aside className="hidden md:flex w-80 h-full bg-gray-900 border-r border-gray-800 flex-col shrink-0 z-20 shadow-2xl">
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between sticky top-0 bg-gray-900 z-10">
-          <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">
-            ChromaNumber
-          </h1>
-          <button
-            onClick={() => {
-              if (confirm("Exit? Progress lost.")) {
-                setStage(AppStage.UPLOAD);
-                setSourceImage(null);
-                setProcessedData(null);
-              }
-            }}
-            className="p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition"
-            title="Back to Menu"
-          >
-            <Icons.Undo />
-          </button>
-        </div>
-
-        {/* User Profile / Login (Desktop) */}
-        <div className="p-4 border-b border-gray-800">
-          {user ? (
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-green-400">Logged In</span>
-              <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-white underline">Logout</button>
+        <div className="p-6 border-b border-gray-800 bg-gray-950/50 backdrop-blur">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg flex items-center justify-center text-white font-bold text-xl">
+              CN
             </div>
-          ) : (
-            <button onClick={handleLogin} className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-purple-300 text-sm font-bold rounded-lg border border-purple-500/30">
-              Login with GitHub
-            </button>
+            <div>
+              <h2 className="font-bold text-lg leading-tight text-white">ChromaNumber</h2>
+              <span className="text-xs text-indigo-400 font-medium">AI Edition</span>
+            </div>
+          </div>
+
+          {user && (
+            <div className="flex items-center justify-between bg-gray-800/50 rounded-lg p-3 border border-gray-800">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-xs font-bold text-gray-400">{user.email || 'Logged In'}</span>
+              </div>
+              <button onClick={handleLogout} className="text-xs text-red-400 hover:text-red-300">Exit</button>
+            </div>
           )}
         </div>
 
-        <div className="p-4 border-b border-gray-800">
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs font-semibold uppercase text-gray-500">
-              <span>Completion</span>
-              <span>{Math.round(progress)}%</span>
-            </div>
-            <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-green-400 to-emerald-600 transition-all duration-500 ease-out"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
-          {/* Desktop Content (Reusing existing components for brevity in this tool call, assumed copy-paste logic) */}
-          {/* Desktop Actions */}
+          {/* Actions */}
           <div className="grid grid-cols-2 gap-2">
             <button
               onPointerDown={() => setShowOriginal(true)}
               onPointerUp={() => setShowOriginal(false)}
               onPointerLeave={() => setShowOriginal(false)}
-              className={`flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all select-none ${showOriginal ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/50 scale-95' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 active:scale-95'}`}
+              className="flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium transition-all active:scale-95"
             >
               <Icons.Eye /> <span>View</span>
             </button>
             <button
-              onClick={downloadImage}
-              className="flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium transition-all"
+              onClick={() => setShowExportModal(true)}
+              className="flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium transition-all active:scale-95"
             >
-              <Icons.Download /> <span>Save</span>
+              <Icons.Save /> <span>Save</span>
             </button>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Tools</h3>
-            <div className="flex gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700">
-              <button
-                onClick={() => setActiveTool(ToolMode.FILL)}
-                className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
-              >
-                <Icons.Bucket /> Fill
-              </button>
-              <button
-                onClick={() => setActiveTool(ToolMode.PAN)}
-                className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
-              >
-                <Icons.Hand /> Pan
-              </button>
+          {/* Progress */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm font-medium text-gray-400">
+              <span>Progress</span>
+              <span className="text-indigo-400">{Math.round(progress)}%</span>
             </div>
+            <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700/50">
+              <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500 ease-out" style={{ width: `${progress}%` }} />
+            </div>
+            <p className="text-xs text-gray-500 text-right">{filledRegions.size} / {processedData?.regions.length} regions</p>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Settings</h3>
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showNumbers ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}># 123</button>
-              <button onClick={() => setToolConfig(p => ({ ...p, showBorders: !p.showBorders }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showBorders ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>Borders</button>
-              <button onClick={() => setToolConfig(p => ({ ...p, highlightActive: !p.highlightActive }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.highlightActive ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>Highlight</button>
-            </div>
-          </div>
-
-          <div className="space-y-3 pb-4">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Colors</h3>
-            <div className="grid grid-cols-4 gap-2">
+          {/* Palette */}
+          <div>
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Color Palette</h3>
+            <div className="space-y-1">
               {currentPalette.map((color) => {
+                const isCompleted = colorProgressMap.get(color.id) === processedData?.regions.filter(r => processedData.palette[r.colorId].id === color.id).reduce((acc, r) => acc + r.pixels.length, 0);
                 const isActive = activeColor?.id === color.id;
-                const pixelsFilled = colorProgressMap.get(color.id) || 0;
-                const isComplete = pixelsFilled >= color.count;
-                const percentage = Math.min(100, (pixelsFilled / color.count) * 100);
+
                 return (
                   <button
                     key={color.id}
                     onClick={() => setActiveColor(color)}
-                    className={`aspect-square rounded-lg flex flex-col items-center justify-center relative group overflow-hidden transition-all duration-200 ${isActive ? 'ring-2 ring-white scale-105 z-10 shadow-xl' : 'opacity-80 hover:opacity-100 hover:scale-105'}`}
-                    style={{ backgroundColor: color.hex }}
+                    className={`w-full flex items-center gap-3 p-2 rounded-lg transition-all border ${isActive
+                      ? 'bg-indigo-900/30 border-indigo-500/50 shadow-lg shadow-indigo-900/20 translate-x-1'
+                      : 'bg-transparent border-transparent hover:bg-gray-800 hover:border-gray-700'
+                      }`}
                   >
-                    <span className={`text-xs font-bold z-10 ${(color.rgb.r + color.rgb.g + color.rgb.b) > 400 ? 'text-black' : 'text-white'}`}>{isComplete ? <Icons.Check /> : color.id}</span>
-                    <div className="absolute bottom-0 left-0 w-full h-1 bg-black/20"><div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${percentage}%` }} /></div>
+                    <div
+                      className="w-8 h-8 rounded-full shadow-sm border border-white/10 flex items-center justify-center relative"
+                      style={{ backgroundColor: color.hex }}
+                    >
+                      <span className={`text-[10px] font-bold ${[0, 0, 0].reduce((a, c, i) => a + (parseInt(color.hex.slice(1 + i * 2, 3 + i * 2), 16) * [0.299, 0.587, 0.114][i]), 0) > 128 ? 'text-black' : 'text-white'}`}>
+                        {color.id}
+                      </span>
+                      {isCompleted && (
+                        <div className="absolute -top-1 -right-1 bg-green-500 rounded-full p-0.5 border border-gray-900">
+                          <Icons.Check />
+                        </div>
+                      )}
+                    </div>
+                    <span className={`text-sm font-medium ${isActive ? 'text-white' : 'text-gray-400'} ${isCompleted ? 'line-through opacity-50' : ''}`}>
+                      {color.originalName}
+                    </span>
                   </button>
                 );
               })}
@@ -703,188 +692,130 @@ const App: React.FC = () => {
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <div className="flex-1 relative bg-gray-800 overflow-hidden md:pb-0 pb-16">
-        {/* Added pb-16 for mobile bottom bar clearance if we want it to NOT overlap. 
-            User said "top of the tool menu when closed be the natural bottom of the page".
-            This implies the canvas should end at the top of the bar. */}
-        {stage === AppStage.COLORING && processedData && (
+      <main className="flex-1 relative bg-[#0a0a0c] overflow-hidden flex flex-col items-center justify-center">
+        {processedData && (
           <ColoringCanvas
             data={processedData}
             palette={currentPalette}
-            activeColor={activeColor}
+            activeColor={activeColor!}
             config={toolConfig}
             activeTool={activeTool}
             filledRegions={filledRegions}
-            onFillRegion={(id) => {
-              setFilledRegions(prev => {
-                const newSet = new Set(prev);
-                newSet.add(id);
-                return newSet;
-              });
-            }}
+            onFillRegion={onFillRegion}
             showOriginal={showOriginal}
             originalImageSrc={sourceImage}
-            onToast={(msg, type) => addToast(msg, type)}
-            // Controlled State
+            onToast={addToast}
             scale={canvasScale}
             offset={canvasOffset}
             onZoom={setCanvasScale}
             onPan={(x, y) => setCanvasOffset({ x, y })}
           />
         )}
-      </div>
+      </main>
 
-      {/* MOBILE DRAWER (Overlay) */}
-      <div
-        className={`md:hidden fixed inset-x-0 bottom-0 z-30 bg-gray-900 border-t border-gray-800 transform transition-transform duration-300 ease-out shadow-2xl rounded-t-2xl pb-safe ${activeMobileTab !== 'none' ? 'translate-y-0' : 'translate-y-full'}`}
-        style={{ maxHeight: '90vh' }}
-      >
-        {/* Drawer Handle */}
-        <div className="w-full flex justify-center pt-2 pb-1" onPointerDown={() => setActiveMobileTab('none')}>
-          <div className="w-12 h-1.5 bg-gray-700 rounded-full"></div>
+      {/* MOBILE DRAWER */}
+      <div className={`md:hidden fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 z-30 transition-transform duration-300 ease-in-out ${activeMobileTab !== 'none' ? 'translate-y-0' : 'translate-y-[calc(100%-80px)]'}`}>
+
+        {/* Tab Bar */}
+        <div className="flex h-20 items-center justify-around px-2 border-b border-gray-800 bg-gray-900 relative z-40">
+          <button
+            onClick={() => toggleMobileTab('colors')}
+            className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors ${activeMobileTab === 'colors' ? 'text-indigo-400' : 'text-gray-500'}`}
+          >
+            <div className="w-8 h-8 rounded-full border-2 border-current p-0.5">
+              <div className="w-full h-full rounded-full" style={{ backgroundColor: activeColor?.hex || '#ccc' }} />
+            </div>
+            <span className="text-[10px] font-bold">Colors</span>
+          </button>
+
+          <div className="flex items-center gap-1 bg-gray-800 rounded-full p-1 border border-gray-700">
+            <button
+              onClick={() => setActiveTool(ToolMode.FILL)}
+              className={`p-3 rounded-full transition-all ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'}`}
+            >
+              <Icons.Bucket />
+            </button>
+            <button
+              onClick={() => setActiveTool(ToolMode.PAN)}
+              className={`p-3 rounded-full transition-all ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'}`}
+            >
+              <Icons.Hand />
+            </button>
+          </div>
+
+          <button
+            onClick={() => toggleMobileTab('tools')}
+            className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors ${activeMobileTab === 'tools' ? 'text-indigo-400' : 'text-gray-500'}`}
+          >
+            <Icons.Bulb />
+            <span className="text-[10px] font-bold">Tools</span>
+          </button>
         </div>
 
-        {/* Drawer Content */}
-        <div className="p-4 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(90vh - 20px)' }}>
-
+        {/* Mobile Content Panels */}
+        <div className="h-64 bg-gray-900 overflow-y-auto custom-scrollbar p-4">
           {activeMobileTab === 'colors' && (
-            <div className="grid grid-cols-5 gap-3 pb-8">
-              {currentPalette.map((color) => {
-                const isActive = activeColor?.id === color.id;
-                const pixelsFilled = colorProgressMap.get(color.id) || 0;
-                const isComplete = pixelsFilled >= color.count;
-                const percentage = Math.min(100, (pixelsFilled / color.count) * 100);
-                return (
-                  <button
-                    key={color.id}
-                    onClick={() => { setActiveColor(color); setActiveMobileTab('none'); }}
-                    className={`aspect-square rounded-lg flex flex-col items-center justify-center relative overflow-hidden ${isActive ? 'ring-2 ring-white scale-110 z-10' : 'opacity-90'}`}
-                    style={{ backgroundColor: color.hex }}
-                  >
-                    <span className={`text-xs font-bold z-10 ${(color.rgb.r + color.rgb.g + color.rgb.b) > 400 ? 'text-black' : 'text-white'}`}>{isComplete ? <Icons.Check /> : color.id}</span>
-                    <div className="absolute bottom-0 left-0 w-full h-1 bg-black/20"><div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${percentage}%` }} /></div>
-                  </button>
-                );
-              })}
+            <div className="grid grid-cols-4 gap-3">
+              {currentPalette.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveColor(c)}
+                  className={`aspect-square rounded-xl flex flex-col items-center justify-center gap-1 border-2 transition-all ${activeColor?.id === c.id ? 'border-indigo-500 bg-indigo-900/20' : 'border-transparent bg-gray-800'}`}
+                >
+                  <div className="w-8 h-8 rounded-full shadow-sm" style={{ backgroundColor: c.hex }} />
+                  <span className="text-xs font-bold text-gray-400">{c.id}</span>
+                </button>
+              ))}
             </div>
           )}
 
           {activeMobileTab === 'tools' && (
             <div className="space-y-6 pb-8">
-              <div className="flex justify-between items-center text-gray-300 mb-2">
-                <span className="font-bold">Tools</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase">Brush</label>
+                  <input
+                    type="range" min="1" max="5"
+                    value={toolConfig.brushSize}
+                    onChange={(e) => setToolConfig(prev => ({ ...prev, brushSize: parseInt(e.target.value) }))}
+                    className="w-full accent-indigo-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-3 cursor-pointer w-full p-3 bg-gray-800 rounded-lg">
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${toolConfig.smartFill ? 'bg-indigo-500 border-indigo-500' : 'border-gray-500'}`}>
+                      {toolConfig.smartFill && <Icons.Check />}
+                    </div>
+                    <span className="text-sm font-bold text-gray-300">Smart Fill</span>
+                  </label>
+                </div>
               </div>
 
-              {/* Zoom Controls (New) */}
-              <div className="flex gap-2 bg-gray-800 p-2 rounded-xl">
-                <button onClick={() => setCanvasScale(s => Math.min(10, s * 1.2))} className="flex-1 py-3 bg-gray-700 rounded-lg text-white font-bold flex items-center justify-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 7v6m-3-3h6" /></svg>
-                  Zoom +
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onPointerDown={() => setShowOriginal(true)}
+                  onPointerUp={() => setShowOriginal(false)}
+                  className="p-4 bg-gray-800 rounded-xl flex items-center justify-center gap-2 text-gray-300 font-bold active:bg-gray-700"
+                >
+                  <Icons.Eye /> View Orig
                 </button>
-                <button onClick={() => setCanvasScale(s => Math.max(0.1, s / 1.2))} className="flex-1 py-3 bg-gray-700 rounded-lg text-white font-bold flex items-center justify-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10h6" /></svg>
-                  Zoom -
-                </button>
-                <button onClick={centerImage} className="flex-1 py-3 bg-gray-700 rounded-lg text-white font-bold flex items-center justify-center gap-2">
-                  Fit
+
+                <button
+                  onClick={() => setShowExportModal(true)}
+                  className="p-4 bg-gray-800 rounded-xl flex items-center justify-center gap-2 text-gray-300 font-bold active:bg-gray-700"
+                >
+                  <Icons.Save /> Save
                 </button>
               </div>
 
-              <div className="flex gap-4">
-                <button onClick={() => { setActiveTool(ToolMode.FILL); setActiveMobileTab('none'); }} className={`flex-1 p-4 rounded-xl flex flex-col items-center gap-2 ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
-                  <Icons.Bucket /> <span className="font-bold">Fill</span>
-                </button>
-                <button onClick={() => { setActiveTool(ToolMode.PAN); setActiveMobileTab('none'); }} className={`flex-1 p-4 rounded-xl flex flex-col items-center gap-2 ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
-                  <Icons.Hand /> <span className="font-bold">Pan</span>
-                </button>
-              </div>
-
-              <div className="h-px bg-gray-800"></div>
-
-              <div className="flex gap-4">
-                <button onPointerDown={() => setShowOriginal(true)} onPointerUp={() => setShowOriginal(false)} className="flex-1 p-4 bg-gray-800 rounded-xl flex items-center justify-center gap-2 text-gray-300 font-bold active:bg-gray-700">
-                  <Icons.Eye /> View Original
-                </button>
-                <button onClick={downloadImage} className="flex-1 p-4 bg-gray-800 rounded-xl flex items-center justify-center gap-2 text-gray-300 font-bold active:bg-gray-700">
-                  <Icons.Download /> Save Image
-                </button>
-              </div>
-
-              <button
-                onClick={() => {
-                  if (confirm("Exit? Progress lost.")) {
-                    setStage(AppStage.UPLOAD);
-                    setSourceImage(null);
-                    setProcessedData(null);
-                  }
-                }}
-                className="w-full p-4 bg-red-900/30 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 mt-4"
-              >
-                <Icons.Undo /> Exit to Menu
+              <button onClick={() => setStage(AppStage.UPLOAD)} className="w-full py-4 bg-red-900/20 hover:bg-red-900/40 text-red-400 font-bold rounded-xl border border-red-900/50">
+                Exit to Home
               </button>
             </div>
           )}
-
-          {activeMobileTab === 'settings' && (<>
-            <div className="space-y-4 pb-8">
-              <h3 className="text-gray-400 font-bold uppercase text-xs tracking-wider">View Settings</h3>
-              <button onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
-                <span className="text-gray-200">Show Numbers</span>
-                <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.showNumbers ? 'bg-indigo-600' : 'bg-gray-700'}`}>
-                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.showNumbers ? 'translate-x-6' : 'translate-x-0'}`} />
-                </div>
-              </button>
-              <button onClick={() => setToolConfig(p => ({ ...p, showBorders: !p.showBorders }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
-                <span className="text-gray-200">Show Borders</span>
-                <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.showBorders ? 'bg-indigo-600' : 'bg-gray-700'}`}>
-                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.showBorders ? 'translate-x-6' : 'translate-x-0'}`} />
-                </div>
-              </button>
-              <button onClick={() => setToolConfig(p => ({ ...p, highlightActive: !p.highlightActive }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
-                <span className="text-gray-200">Highlight Active Color</span>
-                <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.highlightActive ? 'bg-indigo-600' : 'bg-gray-700'}`}>
-                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.highlightActive ? 'translate-x-6' : 'translate-x-0'}`} />
-                </div>
-              </button>
-            </div>
-
-            <div className="pt-4 border-t border-gray-800 pb-8">
-              {user ? (
-                <button onClick={handleLogout} className="w-full p-4 bg-red-900/20 text-red-400 rounded-xl font-bold">Logout</button>
-              ) : (
-                <button onClick={handleLogin} className="w-full p-4 bg-purple-600 text-white rounded-xl font-bold shadow-lg">Login with GitHub</button>
-              )}
-            </div>
-          </>)}
         </div>
       </div>
 
-      {/* MOBILE BOTTOM TAB BAR */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-gray-950/90 backdrop-blur border-t border-gray-800 pb-safe">
-        <div className="flex items-center justify-around h-16">
-          <button
-            onClick={() => toggleMobileTab('colors')}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'colors' ? 'text-indigo-400' : 'text-gray-500'}`}
-          >
-            <div className="w-6 h-6 rounded-full border-2 border-current" style={{ backgroundColor: activeColor?.hex || 'transparent' }}></div>
-            <span className="text-xs font-bold">Palette</span>
-          </button>
-          <button
-            onClick={() => toggleMobileTab('tools')}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'tools' ? 'text-indigo-400' : 'text-gray-500'}`}
-          >
-            <Icons.Bucket />
-            <span className="text-xs font-bold">Tools</span>
-          </button>
-          <button
-            onClick={() => toggleMobileTab('settings')}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'settings' ? 'text-indigo-400' : 'text-gray-500'}`}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-            <span className="text-xs font-bold">Settings</span>
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
