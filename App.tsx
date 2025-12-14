@@ -47,6 +47,7 @@ const App: React.FC = () => {
     highlightActive: false,
   });
   const [showCelebration, setShowCelebration] = useState(false);
+  const [activeMobileTab, setActiveMobileTab] = useState<'none' | 'colors' | 'tools' | 'settings'>('none');
 
   // Toast Handler
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -104,6 +105,10 @@ const App: React.FC = () => {
   }, [progress, stage]);
 
   // Handlers
+  const toggleMobileTab = (tab: 'colors' | 'tools' | 'settings') => {
+    setActiveMobileTab(current => current === tab ? 'none' : tab);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const reader = new FileReader();
@@ -444,23 +449,7 @@ const App: React.FC = () => {
         )
   }
 
-        // Mobile UI State
-        const [activeMobileTab, setActiveMobileTab] = useState<'none' | 'colors' | 'tools' | 'settings'>('none');
 
-        if (stage === AppStage.UPLOAD) {
-          // ... (Existing Upload Code) ...
-          // Note: Since I am replacing the entire component return, I will include the unchanged parts in the full replacement if needed, 
-          // but the tool asks for specific chunks. 
-          // Wait, the "chunk" based approach is risky for major layout refactors if conditional logic wraps large blocks.
-          // I will use replace_file_content to rewrite the `return` statement block.
-          // But first let's see if I can just swap the `return` of the main component.
-          // The previous view shows line 446 is where `return (` starts for the main app.
-        }
-
-  // Helper toggle for mobile tabs
-  const toggleMobileTab = (tab: 'colors' | 'tools' | 'settings') => {
-          setActiveMobileTab(current => current === tab ? 'none' : tab);
-  };
 
         return (
         <div className="h-screen w-screen flex flex-col md:flex-row bg-gray-950 overflow-hidden text-gray-200 font-sans relative">
