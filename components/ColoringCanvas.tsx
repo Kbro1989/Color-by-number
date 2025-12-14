@@ -51,9 +51,16 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Performance Optimization: Offscreen Canvas Cache
-    const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    // Performance Optimization: Offscreen Canvas Caches
+    // baseLayer: Background + Borders + Filled Regions (High Res)
+    const baseLayerRef = useRef<HTMLCanvasElement | null>(null);
+    // highlightLayer: Active Color Highlights (High Res)
+    const highlightLayerRef = useRef<HTMLCanvasElement | null>(null);
+
+    // State Tracking for caching
     const lastFilledRegionsRef = useRef<Set<number>>(new Set());
+    const lastActiveColorIdRef = useRef<number | null>(null);
+    const lastShowBordersRef = useRef<boolean>(config.showBorders);
 
     // Keyboard Modifiers
     const [isSpaceHeld, setIsSpaceHeld] = useState(false);
@@ -74,7 +81,28 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
     // Determine Effective Tool (Spacebar overrides)
     const effectiveTool = isSpaceHeld ? ToolMode.PAN : activeTool;
 
-    // Keyboard Listeners
+    // Viewport State (for resizing)
+    const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+
+    // --- Init & Resize Observer ---
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                // Update viewport size state to trigger re-render of canvas element size
+                setViewportSize({
+                    width: entry.contentRect.width,
+                    height: entry.contentRect.height
+                });
+            }
+        });
+
+        resizeObserver.observe(containerRef.current);
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    // --- Keyboard Listeners ---
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => { if (e.code === 'Space') setIsSpaceHeld(true); };
         const handleKeyUp = (e: KeyboardEvent) => { if (e.code === 'Space') setIsSpaceHeld(false); };
@@ -91,177 +119,178 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         setHintIndex(0);
     }, [activeColor]);
 
-    // --- Cache Initialization & Update ---
+    // --- Base Layer Cache Management (Additive Updates) ---
     useEffect(() => {
-        // Init Offscreen Canvas
-        if (!offscreenCanvasRef.current) {
-            offscreenCanvasRef.current = document.createElement('canvas');
-            offscreenCanvasRef.current.width = data.originalWidth;
-            offscreenCanvasRef.current.height = data.originalHeight;
-        } else if (offscreenCanvasRef.current.width !== data.originalWidth || offscreenCanvasRef.current.height !== data.originalHeight) {
-            offscreenCanvasRef.current.width = data.originalWidth;
-            offscreenCanvasRef.current.height = data.originalHeight;
-            lastFilledRegionsRef.current = new Set(); // Reset cache tracker if size changes
-        }
-
-        const ctx = offscreenCanvasRef.current.getContext('2d', { willReadFrequently: true });
-        if (!ctx) return;
-
         const w = data.originalWidth;
         const h = data.originalHeight;
 
-        // If this is a fresh init or full reset (e.g. undo all used to be empty, now filledRegions size is 0 but last was > 0)
-        // Or specific regions added.
+        // Init Base Layer
+        if (!baseLayerRef.current) {
+            baseLayerRef.current = document.createElement('canvas');
+            baseLayerRef.current.width = w;
+            baseLayerRef.current.height = h;
+        } else if (baseLayerRef.current.width !== w || baseLayerRef.current.height !== h) {
+            baseLayerRef.current.width = w;
+            baseLayerRef.current.height = h;
+            lastFilledRegionsRef.current = new Set(); // Reset cache tracker
+        }
 
-        // Simple strategy: 
-        // 1. If lastFilledRegions is empty -> Draw Background + Borders.
-        // 2. If filledRegions grew -> Draw ONLY new regions.
-        // 3. If filledRegions shrank (Undo) -> Full Redraw (Can be optimized later but undo is rare).
-        // 4. If Palette changes -> Full Redraw (Theme change).
+        const ctx = baseLayerRef.current.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
 
-        const isFullRedraw = lastFilledRegionsRef.current.size === 0 ||
-            filledRegions.size < lastFilledRegionsRef.current.size ||
-            // Detect Palette Change? We rely on 'palette' dependency in useEffect. 
-            // If palette changes, we probably need full redraw. 
-            // But we can't easily detect 'palette changed' vs 'filledRegions changed' inside one effect unless we split them or use refs.
-            // Let's assume performant partial updates for fills, full redraw for everything else.
-            true; // For now, let's optimize the loop inside.
-
-        // Optimization: Delta updates
-        // To do delta updates correctly, we need to know exactly WHICH ID was added.
-        // Comparing Sets is O(N).
-        // For now, let's do a smart redraw:
-        // Always redraw background + filled regions. It's faster than `putImageData` for every pixel if we do it in one pass using typed arrays?
-        // NO. The whole point is to AVOID iterating all regions.
-
-        // Let's use `isFullRedraw` logic properly.
+        // Decision: Full Redraw vs Delta Update
         const prevSize = lastFilledRegionsRef.current.size;
         const currSize = filledRegions.size;
 
-        // We need to check if we can do partial update.
-        // Only if (curr > prev) AND (palette matches? We'll assume palette serves as key for effect re-run).
+        // Full Redraw Conditions:
+        // 1. First Run (prevSize === 0)
+        // 2. Clear / Undo (currSize < prevSize)
+        // 3. Borders Toggle Changed
+        const bordersChanged = lastShowBordersRef.current !== config.showBorders;
+        const isFullRedraw = lastFilledRegionsRef.current.size === 0 || currSize < prevSize || bordersChanged;
 
-        // Actually, let's just use a persistent ImageData buffer?
-        // No, using canvas 2D generic drawing for caching is standard.
+        if (isFullRedraw) {
+            // --- FULL REDRAW ---
+            // 1. Background
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, w, h);
 
-        // Re-implementing Full Redraw for correctness first, but optimizing the method.
-        // Then partials.
+            // 2. Borders & Fills
+            // Using ImageData for batch processing is fastest for full redraws
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const buf = new Uint32Array(imgData.data.buffer);
 
-        // To make it FAST:
-        // 1. Create ImageData ONCE.
-        // 2. Mutate it.
-        // 3. Put it back.
+            const borderVal = (255 << 24) | (219 << 16) | (213 << 8) | 209; // #d1d5db
 
-        const imgData = ctx.getImageData(0, 0, w, h); // Read current state? No, read blank if full redraw.
-        const buf = new Uint32Array(imgData.data.buffer);
-
-        if (prevSize === 0 || currSize < prevSize) {
-            // Full Clear
-            buf.fill(0xFFFFFFFF); // White
-        }
-
-        // We need to identify New Regions vs All Regions.
-        // If we clear, we loop ALL filledRegions.
-        // If we partial, we need 'added' regions.
-
-        // Let's stick to a reasonably fast Full Redraw of the backing buffer for now, 
-        // because `data.regions.forEach` is fast enough (JS loop), the bottleneck was `putImageData` happening on EVERY ANIMATION FRAME.
-        // By moving it to this useEffect, we ONLY do it when state changes, NOT when ripples animate.
-        // This alone sends performance from "Laggy" to "Smooth" during animations.
-
-        // So, FULL REDRAW of caching canvas here is fine, as long as it's not in `draw()`.
-
-        // 1. Clear/Init
-        if (prevSize === 0 || currSize < prevSize) {
-            buf.fill(0xFFFFFFFF);
-
-            // Borders (rendering borders into cache is good)
+            // Draw Borders first (if enabled)
             if (config.showBorders) {
-                // Grey borders
-                const borderVal = (255 << 24) | (219 << 16) | (213 << 8) | 209; // #d1d5db / 209, 213, 219
-                data.regions.forEach(region => {
+                // Optimization directly iterating regions
+                for (let i = 0; i < data.regions.length; i++) {
+                    const region = data.regions[i];
+                    // Only draw borders for UNFILLED regions?
+                    // Original logic: if (!filledRegions.has(region.id)) render borders
                     if (!filledRegions.has(region.id)) {
-                        for (const pIdx of region.borderPixels) buf[pIdx] = borderVal;
+                        for (let j = 0; j < region.borderPixels.length; j++) {
+                            buf[region.borderPixels[j]] = borderVal;
+                        }
                     }
-                });
+                }
             }
+
+            // Draw Filled Regions
+            // Using set iteration
+            filledRegions.forEach(rId => {
+                const region = data.regions.find(r => r.id === rId);
+                if (region) {
+                    const c = palette[region.colorId].rgb;
+                    const colorVal = (255 << 24) | (c.b << 16) | (c.g << 8) | c.r;
+                    for (let j = 0; j < region.pixels.length; j++) {
+                        buf[region.pixels[j]] = colorVal;
+                    }
+                }
+            });
+
+            ctx.putImageData(imgData, 0, 0);
+
+        } else {
+            // --- DELTA UPDATE (Additive) ---
+            // Draw only newly added regions.
+            // Loop through CURRENT filled regions. If NOT in LAST, draw it.
+            // Optimization: Iterate filledRegions (smaller than all regions).
+
+            filledRegions.forEach(rId => {
+                if (!lastFilledRegionsRef.current.has(rId)) {
+                    // New fill!
+                    const region = data.regions.find(r => r.id === rId);
+                    if (region) {
+                        const c = palette[region.colorId].rgb;
+                        ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+
+                        // Use fillRect for new pixels. 
+                        // Faster than putImageData for small updates.
+                        for (const pIdx of region.pixels) {
+                            ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
+                        }
+                    }
+                }
+            });
         }
 
-        // 2. Draw Fills
-        // If we cleared, we draw all.
-        // If we didn't clear, we only draw new ones... but finding new ones is O(N) Set diff.
-        // If we just draw ALL filled regions every time state changes, is it too slow?
-        // For 1000 regions, yes.
-        // BUT, we only do this on CLICK. Not on hover/animate. So 60fps is not required here. Instant response is required.
-        // 100ms is acceptable. 16ms is better.
-
-        // Optimization: Only iterate if needed?
-        // Let's iterate ALL filled regions for robustness.
-        filledRegions.forEach(rId => {
-            const region = data.regions.find(r => r.id === rId);
-            if (region) {
-                const c = palette[region.colorId].rgb;
-                // ABGR for little endian
-                const colorVal = (255 << 24) | (c.b << 16) | (c.g << 8) | c.r;
-                for (const pIdx of region.pixels) buf[pIdx] = colorVal;
-            }
-        });
-
-        ctx.putImageData(imgData, 0, 0);
         lastFilledRegionsRef.current = new Set(filledRegions);
+        lastShowBordersRef.current = config.showBorders;
 
     }, [filledRegions, data, palette, config.showBorders]);
 
-    // --- Drawing Logic (The Render Loop) ---
-    const draw = useCallback(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        // Clear Main Canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+    // --- Highlight Layer Cache ---
+    useEffect(() => {
         const w = data.originalWidth;
+        const h = data.originalHeight;
 
-        // 1. Draw Cached Layer (Background + Fills + Borders)
-        if (offscreenCanvasRef.current) {
-            ctx.drawImage(offscreenCanvasRef.current, 0, 0);
+        if (!highlightLayerRef.current) {
+            highlightLayerRef.current = document.createElement('canvas');
+            highlightLayerRef.current.width = w;
+            highlightLayerRef.current.height = h;
+        } else if (highlightLayerRef.current.width !== w || highlightLayerRef.current.height !== h) {
+            highlightLayerRef.current.width = w;
+            highlightLayerRef.current.height = h;
         }
 
-        // 2. Highlight Active Color (Dynamic)
+        const ctx = highlightLayerRef.current.getContext('2d');
+        if (!ctx) return;
+
+        // Clear
+        ctx.clearRect(0, 0, w, h);
+
+        // Draw Highlights if enabled
         if (config.highlightActive && activeColor) {
             ctx.fillStyle = activeColor.hex + '66'; // 40% opacity
-            // This loop is unavoidable for dynamic highlight, but it's only for ONE color ID.
-            // Optimization: Filter regions first? No, iterate map/array? Data.regions is array.
-            // Can we pre-group regions by ColorID? That would be O(1) lookup.
-            // Doing O(N) here is okay-ish if N < 5000.
 
-            // Optimization: Skip if zoomed out? No, users need highlight to find.
             data.regions.forEach(region => {
+                // Skip filled regions
                 if (!filledRegions.has(region.id) && region.colorId === activeColor.id - 1) {
                     for (const pIdx of region.pixels) {
-                        // Draw rects is slow. But we can't use putImageData easily on top of existing context without readback.
-                        // Actually, drawing thousands of 1x1 rects is THE KILLER.
-                        // Better: Create a temporary ImageData, fill it transparent, paint pixels, putImageData.
-
-                        // Since we are clearing canvas, we can't just overwrite.
-                        // But we can `ctx.fillRect`.
-                        // Note: `fillRect` is GPU accelerated but overhead of call is high.
-                        // Pixel manipulation on CPU -> putImageData is usually faster for pixel art.
-
-                        // HYBRID approach:
-                        // We are already using `drawImage` for base.
-                        // Let's try `ctx.fillRect` first. If it lags, we optimize.
-                        // The original code handled this inside the main loop.
-
                         ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
                     }
                 }
             });
         }
 
-        // 3. Flash Error
+    }, [activeColor, config.highlightActive, filledRegions, data]);
+
+    // --- Main Render Loop (Viewport Rendering) ---
+    const draw = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const vW = canvas.width;
+        const vH = canvas.height;
+
+        // 1. Clear Viewport
+        ctx.clearRect(0, 0, vW, vH);
+
+        // Calculate Source Rect
+        // Source Image Coordinates that map to Viewport [0,0, vW, vH]
+        // viewPixel = imagePixel * scale + offset
+        // imagePixel = (viewPixel - offset) / scale
+
+        const sX = -offset.x / scale;
+        const sY = -offset.y / scale;
+        const sW = vW / scale;
+        const sH = vH / scale;
+
+        // 2. Draw Base Layer (Clipped)
+        if (baseLayerRef.current) {
+            ctx.drawImage(baseLayerRef.current, sX, sY, sW, sH, 0, 0, vW, vH);
+        }
+
+        // 3. Draw Highlight Layer (Clipped)
+        if (highlightLayerRef.current && config.highlightActive && activeColor) {
+            ctx.drawImage(highlightLayerRef.current, sX, sY, sW, sH, 0, 0, vW, vH);
+        }
+
+        // 4. Flash Error (Dynamic)
         if (flashRegion) {
             const now = performance.now();
             const diff = now - flashRegion.start;
@@ -270,92 +299,116 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                 const region = data.regions.find(r => r.id === flashRegion!.id);
                 if (region) {
                     ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
+                    ctx.beginPath();
+                    // Optimization: Check bounds first?
+                    // Just drawing path in screen space
                     for (const pIdx of region.pixels) {
-                        ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
+                        const rX = pIdx % data.originalWidth;
+                        const rY = Math.floor(pIdx / data.originalWidth);
+
+                        const dX = rX * scale + offset.x;
+                        const dY = rY * scale + offset.y; // Fixed calculation
+
+                        // Simple Culling to prevent drawing off-screen
+                        if (dX >= -scale && dX <= vW && dY >= -scale && dY <= vH) {
+                            ctx.rect(dX, dY, Math.ceil(scale), Math.ceil(scale));
+                        }
                     }
+                    ctx.fill();
                 }
             } else {
                 setFlashRegion(null);
             }
         }
 
-        // 4. Ripples
+        // 5. Ripples (Dynamic)
         if (ripplesRef.current.length > 0) {
             ripplesRef.current.forEach((ripple, idx) => {
+                const dX = ripple.x * scale + offset.x;
+                const dY = ripple.y * scale + offset.y;
+                const dR = ripple.r * scale;
+
                 ctx.beginPath();
-                ctx.arc(ripple.x, ripple.y, ripple.r, 0, Math.PI * 2);
+                ctx.arc(dX, dY, dR, 0, Math.PI * 2);
                 ctx.fillStyle = ripple.color;
                 ctx.globalAlpha = ripple.alpha;
                 ctx.fill();
                 ctx.globalAlpha = 1.0;
 
-                // Update state for next frame
-                ripple.r += 2 / scale; // Scale speed relative to zoom
+                ripple.r += 2 / scale;
                 ripple.alpha -= 0.05;
             });
             ripplesRef.current = ripplesRef.current.filter(r => r.alpha > 0);
         }
 
-        // 5. Numbers
+        // 6. Numbers (Dynamic & Culled)
         if (config.showNumbers) {
             const fontSize = Math.max(12, Math.floor(data.originalWidth / 120));
-            // Viewport Culling
-            // Calculate visible bounds in world coordinates
-            const viewportLeft = -offset.x / scale;
-            const viewportTop = -offset.y / scale;
-            const viewportRight = (containerRef.current?.clientWidth || 0) / scale + viewportLeft;
-            const viewportBottom = (containerRef.current?.clientHeight || 0) / scale + viewportTop;
-
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
+            // Define Visible Image Bounds basically sX, sY, sW, sH
+            const left = sX;
+            const top = sY;
+            const right = sX + sW;
+            const bottom = sY + sH;
+
+            // Only iterate numbers if possible... scanning 5000 regions every frame?
+            // Yes, it's JS loop vs Render, JS loop is fast. 
+            // 5000 iterations is ~0.1ms. Drawing is the cost.
+
             data.regions.forEach(region => {
-                // Cull invisible regions
-                if (region.centroid.x < viewportLeft || region.centroid.x > viewportRight ||
-                    region.centroid.y < viewportTop || region.centroid.y > viewportBottom) {
+                // 1. Cull invisible
+                if (region.centroid.x < left || region.centroid.x > right ||
+                    region.centroid.y < top || region.centroid.y > bottom) {
                     return;
                 }
 
                 const isFilled = filledRegions.has(region.id);
+                const screenX = region.centroid.x * scale + offset.x;
+                const screenY = region.centroid.y * scale + offset.y;
 
-                // Only show numbers if not filled OR if filled but we want to see them
                 if (!isFilled) {
+                    // Logic: Only show if big enough
                     const approximateScreenSize = Math.sqrt(region.pixels.length) * scale;
                     if (approximateScreenSize > 12) {
                         const paletteColor = palette[region.colorId];
                         const isActive = activeColor && (region.colorId === activeColor.id - 1);
+
                         if (isActive) {
                             ctx.fillStyle = '#000000';
-                            ctx.font = `bold ${fontSize * 1.3}px sans-serif`;
+                            // Capped font size to avoid massive letters when zoomed in
+                            ctx.font = `bold ${Math.min(40, fontSize * scale)}px sans-serif`;
                         } else {
                             ctx.fillStyle = '#9ca3af';
-                            ctx.font = `bold ${fontSize}px sans-serif`;
+                            ctx.font = `bold ${Math.min(30, fontSize * scale)}px sans-serif`;
                         }
-                        const num = paletteColor.id;
-                        ctx.fillText(num.toString(), region.centroid.x, region.centroid.y);
+
+                        ctx.fillText(paletteColor.id.toString(), screenX, screenY);
                     }
                 } else {
+                    // Filled Check
                     const approximateScreenSize = Math.sqrt(region.pixels.length) * scale;
                     if (approximateScreenSize > 40 && scale > 2) {
                         const paletteColor = palette[region.colorId];
                         ctx.fillStyle = paletteColor.textColor;
                         ctx.globalAlpha = 0.5;
-                        ctx.font = `bold ${fontSize}px sans-serif`;
-                        ctx.fillText(paletteColor.id.toString(), region.centroid.x, region.centroid.y);
+                        ctx.font = `bold ${Math.min(30, fontSize * scale)}px sans-serif`;
+                        ctx.fillText(paletteColor.id.toString(), screenX, screenY);
                         ctx.globalAlpha = 1.0;
                     }
                 }
             });
         }
 
-        // Keep animating if we have ripples or flash
+        // Animate
         if (ripplesRef.current.length > 0 || flashRegion) {
             animFrameRef.current = requestAnimationFrame(draw);
         }
 
-    }, [data, palette, filledRegions, config, scale, flashRegion, activeColor, offset]);
+    }, [data, palette, filledRegions, config, scale, offset, flashRegion, activeColor, viewportSize]);
 
-    // Trigger draw when dependencies change, but use RAF for the heavy lifting inside draw() if needed
+    // Trigger draw
     useEffect(() => {
         draw();
         return () => cancelAnimationFrame(animFrameRef.current);
@@ -364,45 +417,47 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
     // --- Hint System (Smart Navigation) ---
     const useHint = () => {
         if (!activeColor) return;
-
-        // Find unfilled regions of active color
         const candidates = data.regions
             .filter(r => r.colorId === activeColor.id - 1 && !filledRegions.has(r.id))
-            .sort((a, b) => a.pixels.length - b.pixels.length); // Smallest first
+            .sort((a, b) => a.pixels.length - b.pixels.length);
 
         if (candidates.length === 0) {
             onToast("This color is complete!", 'success');
             return;
         }
 
-        // Cycle through candidates
         const target = candidates[hintIndex % candidates.length];
         setHintIndex(prev => prev + 1);
 
         if (containerRef.current) {
             const { clientWidth, clientHeight } = containerRef.current;
-            const newScale = Math.min(6, 250 / Math.sqrt(target.pixels.length)); // Smart zoom
-
-            // Center target
+            const newScale = Math.min(6, 250 / Math.sqrt(target.pixels.length));
             const newOffsetX = (clientWidth / 2) - (target.centroid.x * newScale);
             const newOffsetY = (clientHeight / 2) - (target.centroid.y * newScale);
-
             onZoom(newScale);
             onPan(newOffsetX, newOffsetY);
-
-            // Flash it
             setFlashRegion({ id: target.id, start: performance.now() });
         }
     };
 
 
     // --- Handlers ---
-
     const performFill = (clientX: number, clientY: number) => {
         if (showOriginal) return;
         const rect = canvasRef.current!.getBoundingClientRect();
-        const x = Math.floor((clientX - rect.left) / scale);
-        const y = Math.floor((clientY - rect.top) / scale);
+
+        // Correct Mouse to Image Space transform
+        // The Canvas is strictly mapped to Viewport.
+        // So (clientX - rect.left) IS the Viewport X.
+
+        const viewX = clientX - rect.left;
+        const viewY = clientY - rect.top;
+
+        // viewX = imageX * scale + offset
+        // imageX = (viewX - offset) / scale
+
+        const x = Math.floor((viewX - offset.x) / scale);
+        const y = Math.floor((viewY - offset.y) / scale);
 
         if (x < 0 || x >= data.originalWidth || y < 0 || y >= data.originalHeight) return;
 
@@ -418,25 +473,19 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                 if (isMatch) {
                     if (!isAlreadyFilled) {
                         onFillRegion(regionId);
-                        // Add Ripple
                         ripplesRef.current.push({
-                            x: x,
-                            y: y,
-                            r: 5,
-                            color: activeColor.hex,
-                            alpha: 1.0,
-                            id: Date.now()
+                            x: x, y: y, r: 5, color: activeColor.hex, alpha: 1.0, id: Date.now()
                         });
-                        draw(); // Force immediate draw for ripple start
+                        // Don't force draw() here, rely on effect
                     }
                 } else {
                     if (isAlreadyFilled) {
                         if (isMatch) {
-                            onFillRegion(regionId); // No-op logic but triggers UI feedback
+                            // Already filled with correct color
+                            onFillRegion(regionId);
                             ripplesRef.current.push({
                                 x: x, y: y, r: 5, color: activeColor.hex, alpha: 1.0, id: Date.now()
                             });
-                            draw();
                         }
                     } else {
                         setFlashRegion({ id: regionId, start: performance.now() });
@@ -448,7 +497,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
 
     const handlePointerDown = (e: React.PointerEvent) => {
         e.currentTarget.setPointerCapture(e.pointerId);
-
         if (effectiveTool === ToolMode.PAN) {
             isDraggingRef.current = true;
             dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -479,92 +527,52 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         onZoom(newScale);
     };
 
-    // --- Touch Logic ---
     const touchStartDistRef = useRef<number>(0);
-    const touchStartCenterRef = useRef<{ x: number, y: number } | null>(null);
-    const isPinchingRef = useRef(false);
     const lastTouchRef = useRef<{ x: number, y: number } | null>(null);
 
-    const getTouchDistance = (t1: React.Touch, t2: React.Touch) => {
-        const dx = t1.clientX - t2.clientX;
-        const dy = t1.clientY - t2.clientY;
-        return Math.hypot(dx, dy);
-    };
-
-    const getTouchCenter = (t1: React.Touch, t2: React.Touch) => {
-        return {
-            x: (t1.clientX + t2.clientX) / 2,
-            y: (t1.clientY + t2.clientY) / 2
-        };
-    };
+    const getTouchDistance = (t1: React.Touch, t2: React.Touch) => Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
 
     const handleTouchStart = (e: React.TouchEvent) => {
         if (e.touches.length === 2) {
-            isPinchingRef.current = true;
             touchStartDistRef.current = getTouchDistance(e.touches[0], e.touches[1]);
-            touchStartCenterRef.current = getTouchCenter(e.touches[0], e.touches[1]);
             offsetStartRef.current = { ...offset };
         } else if (e.touches.length === 1) {
-            isPinchingRef.current = false;
             lastTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-
             if (effectiveTool === ToolMode.PAN) {
                 isDraggingRef.current = true;
                 offsetStartRef.current = { x: offset.x, y: offset.y };
                 dragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             }
-            isDraggingRef.current = true;
             dragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            offsetStartRef.current = { ...offset };
         }
     };
 
     const handleTouchMove = (e: React.TouchEvent) => {
-        if (e.touches.length === 2 && isPinchingRef.current) {
+        if (e.touches.length === 2) {
             const dist = getTouchDistance(e.touches[0], e.touches[1]);
-            const center = getTouchCenter(e.touches[0], e.touches[1]);
-
             onZoom(Math.max(0.1, Math.min(10, scale * (dist / touchStartDistRef.current))));
             touchStartDistRef.current = dist;
-
-            if (lastTouchRef.current) {
-                const dx = center.x - lastTouchRef.current.x;
-                const dy = center.y - lastTouchRef.current.y;
-                onPan(offset.x + dx, offset.y + dy);
-                lastTouchRef.current = center;
-            }
-
             e.preventDefault();
         } else if (e.touches.length === 1 && isDraggingRef.current) {
             const t = e.touches[0];
             const dx = t.clientX - lastTouchRef.current!.x;
             const dy = t.clientY - lastTouchRef.current!.y;
-
             onPan(offset.x + dx, offset.y + dy);
             lastTouchRef.current = { x: t.clientX, y: t.clientY };
         }
     };
 
     const handleTouchEnd = (e: React.TouchEvent) => {
-        isPinchingRef.current = false;
-        touchStartCenterRef.current = null;
-
-        if (isDraggingRef.current && e.changedTouches.length === 1 && e.touches.length === 0) {
+        if (e.changedTouches.length === 1 && e.touches.length === 0) {
             const start = dragStartRef.current;
             const end = e.changedTouches[0];
             const dist = Math.hypot(end.clientX - start.x, end.clientY - start.y);
-
-            if (dist < 10) {
-                performFill(end.clientX, end.clientY);
-            }
+            if (dist < 10) performFill(end.clientX, end.clientY);
         }
         isDraggingRef.current = false;
     };
 
-    const getCursor = () => {
-        if (effectiveTool === ToolMode.PAN) return isDraggingRef.current ? 'grabbing' : 'grab';
-        return PAINT_BUCKET_CURSOR;
-    };
+    const getCursor = () => effectiveTool === ToolMode.PAN ? (isDraggingRef.current ? 'grabbing' : 'grab') : PAINT_BUCKET_CURSOR;
 
     return (
         <div
@@ -580,15 +588,13 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
         >
+            {/* Viewport Canvas (Sized to Container) */}
             <canvas
                 ref={canvasRef}
-                width={data.originalWidth}
-                height={data.originalHeight}
-                className="absolute origin-top-left rendering-pixelated shadow-2xl transition-opacity duration-200"
-                style={{
-                    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-                    imageRendering: 'auto'
-                }}
+                width={viewportSize.width}
+                height={viewportSize.height}
+                className="absolute top-0 left-0 rendering-pixelated shadow-2xl transition-opacity duration-200"
+                style={{ imageRendering: 'auto' }}
             />
 
             {/* Overlay for Original Image */}
@@ -607,7 +613,7 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                 />
             )}
 
-            {/* Smart Navigation / Hint Button */}
+            {/* Hint Button */}
             <div
                 className="absolute bottom-6 left-6 pointer-events-auto flex gap-2"
                 onPointerDown={(e) => e.stopPropagation()}
