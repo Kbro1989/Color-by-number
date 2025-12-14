@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { ProcessedImage, PaletteColor, ToolConfig, ToolMode } from '../types';
+import { ProcessedImage, PaletteColor, ToolConfig, ToolMode, Region } from '../types';
 
 interface ColoringCanvasProps {
     data: ProcessedImage;
@@ -52,14 +52,11 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Performance Optimization: Offscreen Canvas Caches
-    // baseLayer: Background + Borders + Filled Regions (High Res)
     const baseLayerRef = useRef<HTMLCanvasElement | null>(null);
-    // highlightLayer: Active Color Highlights (High Res)
     const highlightLayerRef = useRef<HTMLCanvasElement | null>(null);
 
     // State Tracking for caching
     const lastFilledRegionsRef = useRef<Set<number>>(new Set());
-    const lastActiveColorIdRef = useRef<number | null>(null);
     const lastShowBordersRef = useRef<boolean>(config.showBorders);
 
     // Keyboard Modifiers
@@ -78,26 +75,49 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
     // Hint State
     const [hintIndex, setHintIndex] = useState(0);
 
-    // Determine Effective Tool (Spacebar overrides)
-    const effectiveTool = isSpaceHeld ? ToolMode.PAN : activeTool;
-
     // Viewport State (for resizing)
     const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+
+    const effectiveTool = isSpaceHeld ? ToolMode.PAN : activeTool;
+
+    // --- Phase 3: Spatial Indexing & Pre-computed Maps ---
+    // Optimizes O(N) looups to O(1) or O(SpatialBucket)
+    const { regionsById, spatialGrid, GRID_SIZE } = useMemo(() => {
+        const idMap = new Map<number, Region>();
+        data.regions.forEach(r => idMap.set(r.id, r));
+
+        // Spatial Grid: 256px buckets
+        const CELL_SIZE = 256;
+        const gridWidth = Math.ceil(data.originalWidth / CELL_SIZE);
+        const gridHeight = Math.ceil(data.originalHeight / CELL_SIZE);
+        const grid: number[][] = new Array(gridWidth * gridHeight).fill(0).map(() => []);
+
+        data.regions.forEach(r => {
+            // Assign region to bucket based on centroid
+            // Could assign to multiple if large, but centroid is usually enough for "numbers" culling
+            // For drawing highlights, checking center is close enough for 99% cases
+            const gx = Math.floor(r.centroid.x / CELL_SIZE);
+            const gy = Math.floor(r.centroid.y / CELL_SIZE);
+            if (gx >= 0 && gx < gridWidth && gy >= 0 && gy < gridHeight) {
+                grid[gy * gridWidth + gx].push(r.id);
+            }
+        });
+
+        return {
+            regionsById: idMap,
+            spatialGrid: grid,
+            GRID_SIZE: CELL_SIZE
+        };
+    }, [data]);
 
     // --- Init & Resize Observer ---
     useEffect(() => {
         if (!containerRef.current) return;
-
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
-                // Update viewport size state to trigger re-render of canvas element size
-                setViewportSize({
-                    width: entry.contentRect.width,
-                    height: entry.contentRect.height
-                });
+                setViewportSize({ width: entry.contentRect.width, height: entry.contentRect.height });
             }
         });
-
         resizeObserver.observe(containerRef.current);
         return () => resizeObserver.disconnect();
     }, []);
@@ -114,17 +134,13 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         };
     }, []);
 
-    // Reset hint index when active color changes
-    useEffect(() => {
-        setHintIndex(0);
-    }, [activeColor]);
+    useEffect(() => { setHintIndex(0); }, [activeColor]);
 
-    // --- Base Layer Cache Management (Additive Updates) ---
+    // --- Base Layer Cache Management (Batched Delta Updates) ---
     useEffect(() => {
         const w = data.originalWidth;
         const h = data.originalHeight;
 
-        // Init Base Layer
         if (!baseLayerRef.current) {
             baseLayerRef.current = document.createElement('canvas');
             baseLayerRef.current.width = w;
@@ -132,94 +148,82 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         } else if (baseLayerRef.current.width !== w || baseLayerRef.current.height !== h) {
             baseLayerRef.current.width = w;
             baseLayerRef.current.height = h;
-            lastFilledRegionsRef.current = new Set(); // Reset cache tracker
+            lastFilledRegionsRef.current = new Set();
         }
 
         const ctx = baseLayerRef.current.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
 
-        // Decision: Full Redraw vs Delta Update
         const prevSize = lastFilledRegionsRef.current.size;
         const currSize = filledRegions.size;
-
-        // Full Redraw Conditions:
-        // 1. First Run (prevSize === 0)
-        // 2. Clear / Undo (currSize < prevSize)
-        // 3. Borders Toggle Changed
         const bordersChanged = lastShowBordersRef.current !== config.showBorders;
         const isFullRedraw = lastFilledRegionsRef.current.size === 0 || currSize < prevSize || bordersChanged;
 
         if (isFullRedraw) {
-            // --- FULL REDRAW ---
-            // 1. Background
+            // Full Redraw Strategy: ImageData (Fastest for bulk)
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, w, h);
 
-            // 2. Borders & Fills
-            // Using ImageData for batch processing is fastest for full redraws
             const imgData = ctx.getImageData(0, 0, w, h);
             const buf = new Uint32Array(imgData.data.buffer);
-
             const borderVal = (255 << 24) | (219 << 16) | (213 << 8) | 209; // #d1d5db
 
-            // Draw Borders first (if enabled)
             if (config.showBorders) {
-                // Optimization directly iterating regions
                 for (let i = 0; i < data.regions.length; i++) {
                     const region = data.regions[i];
-                    // Only draw borders for UNFILLED regions?
-                    // Original logic: if (!filledRegions.has(region.id)) render borders
                     if (!filledRegions.has(region.id)) {
-                        for (let j = 0; j < region.borderPixels.length; j++) {
-                            buf[region.borderPixels[j]] = borderVal;
-                        }
+                        for (let j = 0; j < region.borderPixels.length; j++) buf[region.borderPixels[j]] = borderVal;
                     }
                 }
             }
 
-            // Draw Filled Regions
-            // Using set iteration
             filledRegions.forEach(rId => {
-                const region = data.regions.find(r => r.id === rId);
+                const region = regionsById.get(rId);
                 if (region) {
                     const c = palette[region.colorId].rgb;
                     const colorVal = (255 << 24) | (c.b << 16) | (c.g << 8) | c.r;
-                    for (let j = 0; j < region.pixels.length; j++) {
-                        buf[region.pixels[j]] = colorVal;
-                    }
+                    for (let j = 0; j < region.pixels.length; j++) buf[region.pixels[j]] = colorVal;
                 }
             });
-
             ctx.putImageData(imgData, 0, 0);
 
         } else {
-            // --- DELTA UPDATE (Additive) ---
-            // Draw only newly added regions.
-            // Loop through CURRENT filled regions. If NOT in LAST, draw it.
-            // Optimization: Iterate filledRegions (smaller than all regions).
-
+            // Delta Update Strategy: Batched Path (Fastest for sparse)
+            const newRegions: number[] = [];
             filledRegions.forEach(rId => {
-                if (!lastFilledRegionsRef.current.has(rId)) {
-                    // New fill!
-                    const region = data.regions.find(r => r.id === rId);
-                    if (region) {
-                        const c = palette[region.colorId].rgb;
-                        ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+                if (!lastFilledRegionsRef.current.has(rId)) newRegions.push(rId);
+            });
 
-                        // Use fillRect for new pixels. 
-                        // Faster than putImageData for small updates.
+            // Optimize: Group by color to minimize style changes
+            const updatesByColor = new Map<number, number[]>();
+            newRegions.forEach(rId => {
+                const r = regionsById.get(rId);
+                if (r) {
+                    if (!updatesByColor.has(r.colorId)) updatesByColor.set(r.colorId, []);
+                    updatesByColor.get(r.colorId)!.push(rId);
+                }
+            });
+
+            updatesByColor.forEach((rIds, colorId) => {
+                const c = palette[colorId].rgb;
+                ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+                ctx.beginPath();
+                for (const rId of rIds) {
+                    const region = regionsById.get(rId);
+                    if (region) {
                         for (const pIdx of region.pixels) {
-                            ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
+                            ctx.rect(pIdx % w, Math.floor(pIdx / w), 1, 1);
                         }
                     }
                 }
+                ctx.fill();
             });
         }
 
         lastFilledRegionsRef.current = new Set(filledRegions);
         lastShowBordersRef.current = config.showBorders;
 
-    }, [filledRegions, data, palette, config.showBorders]);
+    }, [filledRegions, data, palette, config.showBorders, regionsById]);
 
     // --- Highlight Layer Cache ---
     useEffect(() => {
@@ -238,26 +242,25 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         const ctx = highlightLayerRef.current.getContext('2d');
         if (!ctx) return;
 
-        // Clear
         ctx.clearRect(0, 0, w, h);
 
-        // Draw Highlights if enabled
         if (config.highlightActive && activeColor) {
-            ctx.fillStyle = activeColor.hex + '66'; // 40% opacity
+            ctx.fillStyle = activeColor.hex + '66';
+            ctx.beginPath();
 
-            data.regions.forEach(region => {
-                // Skip filled regions
+            for (let i = 0; i < data.regions.length; i++) {
+                const region = data.regions[i];
                 if (!filledRegions.has(region.id) && region.colorId === activeColor.id - 1) {
                     for (const pIdx of region.pixels) {
-                        ctx.fillRect(pIdx % w, Math.floor(pIdx / w), 1, 1);
+                        ctx.rect(pIdx % w, Math.floor(pIdx / w), 1, 1);
                     }
                 }
-            });
+            }
+            ctx.fill();
         }
-
     }, [activeColor, config.highlightActive, filledRegions, data]);
 
-    // --- Main Render Loop (Viewport Rendering) ---
+    // --- Main Render Loop (Spatial Culling) ---
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -266,50 +269,36 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
 
         const vW = canvas.width;
         const vH = canvas.height;
-
-        // 1. Clear Viewport
         ctx.clearRect(0, 0, vW, vH);
 
-        // Calculate Source Rect
-        // Source Image Coordinates that map to Viewport [0,0, vW, vH]
-        // viewPixel = imagePixel * scale + offset
-        // imagePixel = (viewPixel - offset) / scale
-
+        // 1. Calculate Source Rect
         const sX = -offset.x / scale;
         const sY = -offset.y / scale;
         const sW = vW / scale;
         const sH = vH / scale;
 
-        // 2. Draw Base Layer (Clipped)
-        if (baseLayerRef.current) {
-            ctx.drawImage(baseLayerRef.current, sX, sY, sW, sH, 0, 0, vW, vH);
-        }
-
-        // 3. Draw Highlight Layer (Clipped)
+        // 2. Draw Cached Layers
+        if (baseLayerRef.current) ctx.drawImage(baseLayerRef.current, sX, sY, sW, sH, 0, 0, vW, vH);
         if (highlightLayerRef.current && config.highlightActive && activeColor) {
             ctx.drawImage(highlightLayerRef.current, sX, sY, sW, sH, 0, 0, vW, vH);
         }
 
-        // 4. Flash Error (Dynamic)
+        // 3. Dynamic Elements (Flash, Ripples)
         if (flashRegion) {
             const now = performance.now();
             const diff = now - flashRegion.start;
             if (diff < 400) {
                 const alpha = Math.max(0, 1 - diff / 400);
-                const region = data.regions.find(r => r.id === flashRegion!.id);
+                // O(1) Lookup
+                const region = regionsById.get(flashRegion.id);
                 if (region) {
                     ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
                     ctx.beginPath();
-                    // Optimization: Check bounds first?
-                    // Just drawing path in screen space
                     for (const pIdx of region.pixels) {
                         const rX = pIdx % data.originalWidth;
                         const rY = Math.floor(pIdx / data.originalWidth);
-
                         const dX = rX * scale + offset.x;
-                        const dY = rY * scale + offset.y; // Fixed calculation
-
-                        // Simple Culling to prevent drawing off-screen
+                        const dY = rY * scale + offset.y;
                         if (dX >= -scale && dX <= vW && dY >= -scale && dY <= vH) {
                             ctx.rect(dX, dY, Math.ceil(scale), Math.ceil(scale));
                         }
@@ -321,111 +310,102 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             }
         }
 
-        // 5. Ripples (Dynamic)
         if (ripplesRef.current.length > 0) {
-            ripplesRef.current.forEach((ripple, idx) => {
+            ripplesRef.current.forEach((ripple) => {
                 const dX = ripple.x * scale + offset.x;
                 const dY = ripple.y * scale + offset.y;
                 const dR = ripple.r * scale;
-
                 ctx.beginPath();
                 ctx.arc(dX, dY, dR, 0, Math.PI * 2);
                 ctx.fillStyle = ripple.color;
                 ctx.globalAlpha = ripple.alpha;
                 ctx.fill();
                 ctx.globalAlpha = 1.0;
-
                 ripple.r += 2 / scale;
                 ripple.alpha -= 0.05;
             });
             ripplesRef.current = ripplesRef.current.filter(r => r.alpha > 0);
         }
 
-        // 6. Numbers (Dynamic & Culled)
+        // 4. Numbers (Spatial Culling)
         if (config.showNumbers) {
             const fontSize = Math.max(12, Math.floor(data.originalWidth / 120));
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            // Define Visible Image Bounds basically sX, sY, sW, sH
-            const left = sX;
-            const top = sY;
-            const right = sX + sW;
-            const bottom = sY + sH;
+            // Calculate which grid cells are visible
+            const startGx = Math.floor(sX / GRID_SIZE);
+            const startGy = Math.floor(sY / GRID_SIZE);
+            const endGx = Math.floor((sX + sW) / GRID_SIZE);
+            const endGy = Math.floor((sY + sH) / GRID_SIZE);
 
-            // Only iterate numbers if possible... scanning 5000 regions every frame?
-            // Yes, it's JS loop vs Render, JS loop is fast. 
-            // 5000 iterations is ~0.1ms. Drawing is the cost.
+            const gridWidth = Math.ceil(data.originalWidth / GRID_SIZE);
 
-            data.regions.forEach(region => {
-                // 1. Cull invisible
-                if (region.centroid.x < left || region.centroid.x > right ||
-                    region.centroid.y < top || region.centroid.y > bottom) {
-                    return;
-                }
+            // Iterate only visible buckets
+            for (let gy = startGy; gy <= endGy; gy++) {
+                for (let gx = startGx; gx <= endGx; gx++) {
+                    const idx = gy * gridWidth + gx;
+                    // Check bounds for grid index
+                    if (idx >= 0 && idx < spatialGrid.length && spatialGrid[idx]) {
+                        for (const rId of spatialGrid[idx]) {
+                            const region = regionsById.get(rId)!;
 
-                const isFilled = filledRegions.has(region.id);
-                const screenX = region.centroid.x * scale + offset.x;
-                const screenY = region.centroid.y * scale + offset.y;
+                            // Re-verify exact bounds (bucket is coarse)
+                            // Strict culling logic: region MUST have centroid inside viewport?
+                            // Or overlaps? Numbers are drawn at centroid. So checking centroid is correct.
+                            if (region.centroid.x < sX || region.centroid.x > sX + sW ||
+                                region.centroid.y < sY || region.centroid.y > sY + sH) continue;
 
-                if (!isFilled) {
-                    // Logic: Only show if big enough
-                    const approximateScreenSize = Math.sqrt(region.pixels.length) * scale;
-                    if (approximateScreenSize > 12) {
-                        const paletteColor = palette[region.colorId];
-                        const isActive = activeColor && (region.colorId === activeColor.id - 1);
+                            const isFilled = filledRegions.has(region.id);
+                            const screenX = region.centroid.x * scale + offset.x;
+                            const screenY = region.centroid.y * scale + offset.y;
 
-                        if (isActive) {
-                            ctx.fillStyle = '#000000';
-                            // Capped font size to avoid massive letters when zoomed in
-                            ctx.font = `bold ${Math.min(40, fontSize * scale)}px sans-serif`;
-                        } else {
-                            ctx.fillStyle = '#9ca3af';
-                            ctx.font = `bold ${Math.min(30, fontSize * scale)}px sans-serif`;
+                            if (!isFilled) {
+                                const approxSize = Math.sqrt(region.pixels.length) * scale;
+                                if (approxSize > 12) {
+                                    const isActive = activeColor && (region.colorId === activeColor.id - 1);
+                                    if (isActive) {
+                                        ctx.fillStyle = '#000000';
+                                        ctx.font = `bold ${Math.min(40, fontSize * scale)}px sans-serif`;
+                                    } else {
+                                        ctx.fillStyle = '#9ca3af';
+                                        ctx.font = `bold ${Math.min(30, fontSize * scale)}px sans-serif`;
+                                    }
+                                    ctx.fillText(palette[region.colorId].id.toString(), screenX, screenY);
+                                }
+                            } else {
+                                const approxSize = Math.sqrt(region.pixels.length) * scale;
+                                if (approxSize > 40 && scale > 2) {
+                                    ctx.fillStyle = palette[region.colorId].textColor;
+                                    ctx.globalAlpha = 0.5;
+                                    ctx.font = `bold ${Math.min(30, fontSize * scale)}px sans-serif`;
+                                    ctx.fillText(palette[region.colorId].id.toString(), screenX, screenY);
+                                    ctx.globalAlpha = 1.0;
+                                }
+                            }
                         }
-
-                        ctx.fillText(paletteColor.id.toString(), screenX, screenY);
-                    }
-                } else {
-                    // Filled Check
-                    const approximateScreenSize = Math.sqrt(region.pixels.length) * scale;
-                    if (approximateScreenSize > 40 && scale > 2) {
-                        const paletteColor = palette[region.colorId];
-                        ctx.fillStyle = paletteColor.textColor;
-                        ctx.globalAlpha = 0.5;
-                        ctx.font = `bold ${Math.min(30, fontSize * scale)}px sans-serif`;
-                        ctx.fillText(paletteColor.id.toString(), screenX, screenY);
-                        ctx.globalAlpha = 1.0;
                     }
                 }
-            });
+            }
         }
 
-        // Animate
         if (ripplesRef.current.length > 0 || flashRegion) {
             animFrameRef.current = requestAnimationFrame(draw);
         }
 
-    }, [data, palette, filledRegions, config, scale, offset, flashRegion, activeColor, viewportSize]);
+    }, [data, palette, filledRegions, config, scale, offset, flashRegion, activeColor, viewportSize, spatialGrid, regionsById, GRID_SIZE]);
 
-    // Trigger draw
-    useEffect(() => {
-        draw();
-        return () => cancelAnimationFrame(animFrameRef.current);
-    }, [draw]);
+    useEffect(() => { draw(); return () => cancelAnimationFrame(animFrameRef.current); }, [draw]);
 
-    // --- Hint System (Smart Navigation) ---
     const useHint = () => {
         if (!activeColor) return;
-        const candidates = data.regions
-            .filter(r => r.colorId === activeColor.id - 1 && !filledRegions.has(r.id))
-            .sort((a, b) => a.pixels.length - b.pixels.length);
+        const candidates = data.regions.filter(r => r.colorId === activeColor.id - 1 && !filledRegions.has(r.id));
+        candidates.sort((a, b) => a.pixels.length - b.pixels.length);
 
         if (candidates.length === 0) {
             onToast("This color is complete!", 'success');
             return;
         }
-
         const target = candidates[hintIndex % candidates.length];
         setHintIndex(prev => prev + 1);
 
@@ -440,22 +420,11 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         }
     };
 
-
-    // --- Handlers ---
     const performFill = (clientX: number, clientY: number) => {
         if (showOriginal) return;
         const rect = canvasRef.current!.getBoundingClientRect();
-
-        // Correct Mouse to Image Space transform
-        // The Canvas is strictly mapped to Viewport.
-        // So (clientX - rect.left) IS the Viewport X.
-
         const viewX = clientX - rect.left;
         const viewY = clientY - rect.top;
-
-        // viewX = imageX * scale + offset
-        // imageX = (viewX - offset) / scale
-
         const x = Math.floor((viewX - offset.x) / scale);
         const y = Math.floor((viewY - offset.y) / scale);
 
@@ -465,31 +434,18 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         const regionId = data.regionMap[pIdx];
 
         if (regionId >= 0 && activeColor) {
-            const region = data.regions.find(r => r.id === regionId);
+            const region = regionsById.get(regionId);
             if (region) {
                 const isMatch = activeColor.id - 1 === region.colorId;
                 const isAlreadyFilled = filledRegions.has(regionId);
-
-                if (isMatch) {
-                    if (!isAlreadyFilled) {
-                        onFillRegion(regionId);
-                        ripplesRef.current.push({
-                            x: x, y: y, r: 5, color: activeColor.hex, alpha: 1.0, id: Date.now()
-                        });
-                        // Don't force draw() here, rely on effect
-                    }
-                } else {
-                    if (isAlreadyFilled) {
-                        if (isMatch) {
-                            // Already filled with correct color
-                            onFillRegion(regionId);
-                            ripplesRef.current.push({
-                                x: x, y: y, r: 5, color: activeColor.hex, alpha: 1.0, id: Date.now()
-                            });
-                        }
-                    } else {
-                        setFlashRegion({ id: regionId, start: performance.now() });
-                    }
+                if (isMatch && !isAlreadyFilled) {
+                    onFillRegion(regionId);
+                    ripplesRef.current.push({ x: x, y: y, r: 5, color: activeColor.hex, alpha: 1.0, id: Date.now() });
+                } else if (!isMatch && !isAlreadyFilled) {
+                    setFlashRegion({ id: regionId, start: performance.now() });
+                } else if (isMatch && isAlreadyFilled) {
+                    onFillRegion(regionId);
+                    ripplesRef.current.push({ x: x, y: y, r: 5, color: activeColor.hex, alpha: 1.0, id: Date.now() });
                 }
             }
         }
@@ -501,17 +457,12 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             isDraggingRef.current = true;
             dragStartRef.current = { x: e.clientX, y: e.clientY };
             offsetStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
-        } else {
-            performFill(e.clientX, e.clientY);
-        }
+        } else performFill(e.clientX, e.clientY);
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
         if (isDraggingRef.current && effectiveTool === ToolMode.PAN) {
-            onPan(
-                e.clientX - offsetStartRef.current.x,
-                e.clientY - offsetStartRef.current.y
-            );
+            onPan(e.clientX - offsetStartRef.current.x, e.clientY - offsetStartRef.current.y);
         }
     };
 
@@ -522,9 +473,7 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
 
     const handleWheel = (e: React.WheelEvent) => {
         e.stopPropagation();
-        const zoomSensitivity = 0.001;
-        const newScale = Math.max(0.05, Math.min(10, scale - e.deltaY * zoomSensitivity));
-        onZoom(newScale);
+        onZoom(Math.max(0.05, Math.min(10, scale - e.deltaY * 0.001)));
     };
 
     const touchStartDistRef = useRef<number>(0);
@@ -588,7 +537,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
         >
-            {/* Viewport Canvas (Sized to Container) */}
             <canvas
                 ref={canvasRef}
                 width={viewportSize.width}
@@ -596,8 +544,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                 className="absolute top-0 left-0 rendering-pixelated shadow-2xl transition-opacity duration-200"
                 style={{ imageRendering: 'auto' }}
             />
-
-            {/* Overlay for Original Image */}
             {originalImageSrc && (
                 <img
                     src={originalImageSrc}
@@ -612,8 +558,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                     }}
                 />
             )}
-
-            {/* Hint Button */}
             <div
                 className="absolute bottom-6 left-6 pointer-events-auto flex gap-2"
                 onPointerDown={(e) => e.stopPropagation()}
