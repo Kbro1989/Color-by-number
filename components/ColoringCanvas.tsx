@@ -19,7 +19,7 @@ interface ColoringCanvasProps {
     onPan: (x: number, y: number) => void;
 }
 
-const PAINT_BUCKET_CURSOR = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2v20 M2 12h20" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.8"/><path d="M12 3v18 M3 12h18" stroke="black" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.5" fill="white"/><circle cx="12" cy="12" r="1.5" fill="#ef4444"/></svg>') 12 12, auto`;
+const PAINT_BUCKET_CURSOR = `url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj48cGF0aCBkPSJNMTIgMnYyMCBNMiAxMmgyMCIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiIG9wYWNpdHk9IjAuOCIvPjxwYXRoIGQ9Ik0xMiAzdjE4IE0zIDEyaDE4IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMi41IiBmaWxsPSJ3aGl0ZSIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjEuNSIgZmlsbD0iI2VmNDQ0NCIvPjwvc3ZnPg==') 12 12, auto`;
 
 // Animation types
 interface Ripple {
