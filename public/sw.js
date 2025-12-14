@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chromanumber-v2';
+const CACHE_NAME = 'chromanumber-v3';
 const urlsToCache = [
     './',
     './index.html'
