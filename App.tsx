@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createClient } from "@openauthjs/openauth/client";
 import { AppStage, ProcessedImage, PaletteColor, ToolConfig, PaletteTheme, ToolMode, ToastMessage, AI_STYLES } from './types';
 import { processImageForColoring } from './services/imageProcessor';
 import { remixImage, generateImageFromPrompt } from './services/geminiService';
@@ -18,6 +19,11 @@ const Icons = {
   Bulb: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>,
   Check: () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
 };
+
+const authClient = createClient({
+  clientID: "chromanumber-client",
+  issuer: "https://openauth-template.kristain33rs.workers.dev",
+});
 
 const App: React.FC = () => {
   const [stage, setStage] = useState<AppStage>(AppStage.UPLOAD);
@@ -48,6 +54,47 @@ const App: React.FC = () => {
   });
   const [showCelebration, setShowCelebration] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState<'none' | 'colors' | 'tools' | 'settings'>('none');
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      const token = new URLSearchParams(window.location.search).get("code");
+      if (token) {
+        try {
+          const exchanged = await authClient.authorize(window.location.search);
+          localStorage.setItem("access_token", exchanged.access);
+          window.history.replaceState({}, "", "/");
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      const savedToken = localStorage.getItem("access_token");
+      if (savedToken) {
+        try {
+          // Verify token or fetch user info here (mocked for now as we don't have a userinfo endpoint on the template by default, 
+          // but valid token presence implies login)
+          const payload = JSON.parse(atob(savedToken.split('.')[1]));
+          setUser({ id: payload.sub });
+        } catch (e) {
+          console.error("Invalid token", e);
+          localStorage.removeItem("access_token");
+        }
+      }
+    };
+    initAuth();
+  }, []);
+
+  const handleLogin = async () => {
+    const { url } = await authClient.authorize(window.location.origin, "code");
+    window.location.href = url;
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("access_token");
+    setUser(null);
+    addToast("Logged out successfully", 'info');
+  };
 
   // Toast Handler
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -503,6 +550,20 @@ const App: React.FC = () => {
           </button>
         </div>
 
+        {/* User Profile / Login (Desktop) */}
+        <div className="p-4 border-b border-gray-800">
+          {user ? (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-green-400">Logged In</span>
+              <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-white underline">Logout</button>
+            </div>
+          ) : (
+            <button onClick={handleLogin} className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-purple-300 text-sm font-bold rounded-lg border border-purple-500/30">
+              Login with GitHub
+            </button>
+          )}
+        </div>
+
         <div className="p-4 border-b border-gray-800">
           <div className="space-y-2">
             <div className="flex justify-between text-xs font-semibold uppercase text-gray-500">
@@ -665,7 +726,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {activeMobileTab === 'settings' && (
+          {activeMobileTab === 'settings' && (<>
             <div className="space-y-4">
               <h3 className="text-gray-400 font-bold uppercase text-xs tracking-wider">View Settings</h3>
               <button onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
@@ -687,7 +748,15 @@ const App: React.FC = () => {
                 </div>
               </button>
             </div>
-          )}
+
+            <div className="pt-4 border-t border-gray-800">
+              {user ? (
+                <button onClick={handleLogout} className="w-full p-4 bg-red-900/20 text-red-400 rounded-xl font-bold">Logout</button>
+              ) : (
+                <button onClick={handleLogin} className="w-full p-4 bg-purple-600 text-white rounded-xl font-bold shadow-lg">Login with GitHub</button>
+              )}
+            </div>
+          </>)}
         </div>
       </div>
 
