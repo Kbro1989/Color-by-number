@@ -862,14 +862,56 @@ const App: React.FC = () => {
                     className="w-full accent-indigo-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer"
                   />
                 </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-3 cursor-pointer w-full p-3 bg-gray-800 rounded-lg">
-                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${toolConfig.smartFill ? 'bg-indigo-500 border-indigo-500' : 'border-gray-500'}`}>
-                      {toolConfig.smartFill && <Icons.Check />}
-                    </div>
-                    <span className="text-sm font-bold text-gray-300">Smart Fill</span>
-                  </label>
+                <div className="flex flex-col gap-2 justify-end">
+                  {/* Smart Fill */}
+                  <button
+                    onClick={() => setToolConfig(p => ({ ...p, smartFill: !p.smartFill }))}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-bold transition-all ${toolConfig.smartFill ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'bg-gray-800 border-gray-700 text-gray-400'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full border ${toolConfig.smartFill ? 'bg-indigo-500 border-indigo-500' : 'border-gray-500'}`} />
+                    Smart Fill
+                  </button>
+                  {/* Highlight */}
+                  <button
+                    onClick={() => setToolConfig(p => ({ ...p, highlightActive: !p.highlightActive }))}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-bold transition-all ${toolConfig.highlightActive ? 'bg-yellow-900/30 border-yellow-500 text-yellow-300' : 'bg-gray-800 border-gray-700 text-gray-400'}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full border ${toolConfig.highlightActive ? 'bg-yellow-500 border-yellow-500' : 'border-gray-500'}`} />
+                    Highlight
+                  </button>
                 </div>
+              </div>
+
+              {/* Display Toggles */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))}
+                  className={`p-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${toolConfig.showNumbers ? 'bg-indigo-900/20 border-indigo-500/50 text-indigo-300' : 'bg-gray-800 border-gray-700 text-gray-500'}`}
+                >
+                  <span>123</span> Numbers
+                </button>
+                <button
+                  onClick={() => setToolConfig(p => ({ ...p, showBorders: !p.showBorders }))}
+                  className={`p-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${toolConfig.showBorders ? 'bg-indigo-900/20 border-indigo-500/50 text-indigo-300' : 'bg-gray-800 border-gray-700 text-gray-500'}`}
+                >
+                  <span>⬜</span> Borders
+                </button>
+              </div>
+
+              {/* Theme Selector (Mobile) */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-500 uppercase">Color Theme</label>
+                <select
+                  value={activeTheme}
+                  onChange={(e) => setActiveTheme(e.target.value as PaletteTheme)}
+                  className="w-full bg-gray-800 text-sm border border-gray-700 rounded-lg p-3 font-medium text-gray-300 focus:ring-1 focus:ring-indigo-500 outline-none"
+                >
+                  {Object.values(PaletteTheme).map(theme => (
+                    <option key={theme} value={theme}>
+                      {theme.charAt(0) + theme.slice(1).toLowerCase()}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

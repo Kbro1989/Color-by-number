@@ -526,11 +526,18 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             e.preventDefault();
         } else if (e.touches.length === 1 && isDraggingRef.current) {
             const t = e.touches[0];
-            const dx = t.clientX - lastTouchRef.current!.x;
-            const dy = t.clientY - lastTouchRef.current!.y;
-            const clamped = clampOffset(offset.x + dx, offset.y + dy);
+            // Calculate absolute difference from start
+            const deltaX = t.clientX - dragStartRef.current.x;
+            const deltaY = t.clientY - dragStartRef.current.y;
+
+            // Apply to INITIAL offset
+            const rawX = offsetStartRef.current.x + deltaX;
+            const rawY = offsetStartRef.current.y + deltaY;
+
+            const clamped = clampOffset(rawX, rawY);
             onPan(clamped.x, clamped.y);
-            lastTouchRef.current = { x: t.clientX, y: t.clientY };
+
+            e.preventDefault(); // Prevent scrolling while panning
         }
     };
 
