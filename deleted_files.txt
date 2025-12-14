@@ -1,0 +1,15 @@
+commit 793c8610de3afc8f4c5b516cddd19bc497b79b63
+Author: Kbro1989 <149967879+Kbro1989@users.noreply.github.com>
+Date:   Sat Dec 13 20:42:35 2025 -0600
+
+    Fix static assets: Move sw.js to public, add icon, update manifest
+
+ delete mode 100644 sw.js
+
+commit 15111f5463b178656fe9570ff8d344a587ae5e98
+Author: Kbro1989 <149967879+Kbro1989@users.noreply.github.com>
+Date:   Sat Dec 13 16:34:53 2025 -0600
+
+    feat: Add Gemini AI image generation and remixing services, refactor CSS, and remove manifest.json.
+
+ delete mode 100644 manifest.json

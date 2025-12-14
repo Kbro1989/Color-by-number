@@ -620,6 +620,87 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+          {/* Tools & Options */}
+          <div className="space-y-4">
+            <div className="bg-gray-800 rounded-xl p-3 border border-gray-700 space-y-3">
+              <div className="flex gap-2 bg-gray-900 p-1 rounded-lg">
+                <button
+                  onClick={() => setActiveTool(ToolMode.FILL)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md font-bold text-xs uppercase tracking-wide transition-all ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                  <Icons.Bucket /> Fill
+                </button>
+                <button
+                  onClick={() => setActiveTool(ToolMode.PAN)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md font-bold text-xs uppercase tracking-wide transition-all ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                  <Icons.Hand /> Pan
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase flex justify-between">
+                  <span>Brush Size</span>
+                  <span>{toolConfig.brushSize}x</span>
+                </label>
+                <input
+                  type="range" min="1" max="5"
+                  value={toolConfig.brushSize}
+                  onChange={(e) => setToolConfig(prev => ({ ...prev, brushSize: parseInt(e.target.value) }))}
+                  className="w-full h-1.5 bg-gray-900 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setToolConfig(prev => ({ ...prev, smartFill: !prev.smartFill }))}
+                  className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-bold transition-all ${toolConfig.smartFill ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300' : 'bg-gray-900 border-transparent text-gray-500 hover:border-gray-700'}`}
+                >
+                  <div className={`w-3 h-3 rounded-full border ${toolConfig.smartFill ? 'bg-indigo-500 border-indigo-500' : 'border-gray-500'}`} />
+                  Smart Fill
+                </button>
+                <button
+                  onClick={() => setToolConfig(prev => ({ ...prev, highlightActive: !prev.highlightActive }))}
+                  className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-bold transition-all ${toolConfig.highlightActive ? 'bg-yellow-900/30 border-yellow-500/50 text-yellow-300' : 'bg-gray-900 border-transparent text-gray-500 hover:border-gray-700'}`}
+                >
+                  <div className={`w-3 h-3 rounded-full border ${toolConfig.highlightActive ? 'bg-yellow-500 border-yellow-500' : 'border-gray-500'}`} />
+                  Highlight
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setToolConfig(prev => ({ ...prev, showNumbers: !prev.showNumbers }))}
+                  className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-bold transition-all ${toolConfig.showNumbers ? 'bg-gray-700 border-gray-500 text-gray-200' : 'bg-gray-900 border-transparent text-gray-600'}`}
+                >
+                  <span className="text-[10px]">123</span> Numbers
+                </button>
+                <button
+                  onClick={() => setToolConfig(prev => ({ ...prev, showBorders: !prev.showBorders }))}
+                  className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-bold transition-all ${toolConfig.showBorders ? 'bg-gray-700 border-gray-500 text-gray-200' : 'bg-gray-900 border-transparent text-gray-600'}`}
+                >
+                  <span className="text-[10px]">⬜</span> Borders
+                </button>
+              </div>
+
+              {/* Theme Selector (Restored) */}
+              <div className="space-y-1 pt-2 border-t border-gray-700">
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Color Theme</label>
+                <select
+                  value={activeTheme}
+                  onChange={(e) => setActiveTheme(e.target.value as PaletteTheme)}
+                  className="w-full bg-gray-900 text-xs border border-gray-700 rounded-lg p-2 font-medium text-gray-300 focus:ring-1 focus:ring-indigo-500 outline-none"
+                >
+                  {Object.values(PaletteTheme).map(theme => (
+                    <option key={theme} value={theme}>
+                      {theme.charAt(0) + theme.slice(1).toLowerCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
           {/* Actions */}
           <div className="grid grid-cols-2 gap-2">
             <button
