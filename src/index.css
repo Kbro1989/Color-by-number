@@ -1,4 +1,6 @@
-/* Tailwind directives removed to rely on CDN for now */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* Custom scrollbar for better aesthetics */
 ::-webkit-scrollbar {
@@ -19,9 +21,7 @@
   background: #6b7280;
 }
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+
 
 /* Custom Scrollbar for "mostly hidden" effect */
 .custom-scrollbar::-webkit-scrollbar {

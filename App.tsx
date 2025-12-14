@@ -56,13 +56,46 @@ const App: React.FC = () => {
   const [activeMobileTab, setActiveMobileTab] = useState<'none' | 'colors' | 'tools' | 'settings'>('none');
   const [user, setUser] = useState<any>(null);
 
+  // Canvas State (Lifted from ColoringCanvas)
+  const [canvasScale, setCanvasScale] = useState(1);
+  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
+
+  const centerImage = () => {
+    if (processedData) {
+      // We need container dimensions. Since we don't have a ref to the container here easily (it's in the render),
+      // we can approximate or just reset to safe defaults. 
+      // Better: ColoringCanvas uses a Ref. We can pass a callback? 
+      // actually, we can just calculate based on window size for now, or let ColoringCanvas do it on mount via an effect 
+      // BUT we lifted state. So we control it.
+      // Let's assume full screen minus UI.
+      const w = window.innerWidth;
+      const h = window.innerHeight; // Approximate
+      const scaleX = w / processedData.originalWidth;
+      const scaleY = h / processedData.originalHeight;
+      const startScale = Math.min(scaleX, scaleY, 1) * 0.9;
+      setCanvasScale(startScale);
+      setCanvasOffset({
+        x: (w - processedData.originalWidth * startScale) / 2,
+        y: (h - processedData.originalHeight * startScale) / 2
+      });
+    }
+  };
+
+  // Center when data loads
+  useEffect(() => {
+    if (processedData) centerImage();
+  }, [processedData]);
+
   useEffect(() => {
     const initAuth = async () => {
       const token = new URLSearchParams(window.location.search).get("code");
       if (token) {
         try {
-          const exchanged = await authClient.authorize(window.location.search);
-          localStorage.setItem("access_token", exchanged.access);
+          const code = new URLSearchParams(window.location.search).get("code");
+          if (!code) throw new Error("No code found");
+          const exchanged = await authClient.exchange(code, window.location.origin);
+          if (exchanged.err) throw exchanged.err;
+          localStorage.setItem("access_token", exchanged.tokens.access);
           window.history.replaceState({}, "", "/");
         } catch (e) {
           console.error(e);
@@ -74,10 +107,15 @@ const App: React.FC = () => {
         try {
           // Verify token or fetch user info here (mocked for now as we don't have a userinfo endpoint on the template by default, 
           // but valid token presence implies login)
-          const payload = JSON.parse(atob(savedToken.split('.')[1]));
-          setUser({ id: payload.sub });
+          const parts = savedToken.split('.');
+          if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1]));
+            setUser({ id: payload.sub });
+          } else {
+            throw new Error("Invalid token format");
+          }
         } catch (e) {
-          console.error("Invalid token", e);
+          console.warn("Invalid token found, clearing session", e);
           localStorage.removeItem("access_token");
         }
       }
@@ -664,10 +702,42 @@ const App: React.FC = () => {
         </div>
       </aside>
 
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 relative bg-gray-800 overflow-hidden md:pb-0 pb-16">
+        {/* Added pb-16 for mobile bottom bar clearance if we want it to NOT overlap. 
+            User said "top of the tool menu when closed be the natural bottom of the page".
+            This implies the canvas should end at the top of the bar. */}
+        {stage === AppStage.COLORING && processedData && (
+          <ColoringCanvas
+            data={processedData}
+            palette={currentPalette}
+            activeColor={activeColor}
+            config={toolConfig}
+            activeTool={activeTool}
+            filledRegions={filledRegions}
+            onFillRegion={(id) => {
+              setFilledRegions(prev => {
+                const newSet = new Set(prev);
+                newSet.add(id);
+                return newSet;
+              });
+            }}
+            showOriginal={showOriginal}
+            originalImageSrc={sourceImage}
+            onToast={(msg, type) => addToast(msg, type)}
+            // Controlled State
+            scale={canvasScale}
+            offset={canvasOffset}
+            onZoom={setCanvasScale}
+            onPan={(x, y) => setCanvasOffset({ x, y })}
+          />
+        )}
+      </div>
+
       {/* MOBILE DRAWER (Overlay) */}
       <div
         className={`md:hidden fixed inset-x-0 bottom-0 z-30 bg-gray-900 border-t border-gray-800 transform transition-transform duration-300 ease-out shadow-2xl rounded-t-2xl pb-safe ${activeMobileTab !== 'none' ? 'translate-y-0' : 'translate-y-full'}`}
-        style={{ maxHeight: '60vh' }}
+        style={{ maxHeight: '90vh' }}
       >
         {/* Drawer Handle */}
         <div className="w-full flex justify-center pt-2 pb-1" onPointerDown={() => setActiveMobileTab('none')}>
@@ -675,10 +745,10 @@ const App: React.FC = () => {
         </div>
 
         {/* Drawer Content */}
-        <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(60vh - 20px)' }}>
+        <div className="p-4 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(90vh - 20px)' }}>
 
           {activeMobileTab === 'colors' && (
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-5 gap-3 pb-8">
               {currentPalette.map((color) => {
                 const isActive = activeColor?.id === color.id;
                 const pixelsFilled = colorProgressMap.get(color.id) || 0;
@@ -700,10 +770,26 @@ const App: React.FC = () => {
           )}
 
           {activeMobileTab === 'tools' && (
-            <div className="space-y-6">
+            <div className="space-y-6 pb-8">
               <div className="flex justify-between items-center text-gray-300 mb-2">
                 <span className="font-bold">Tools</span>
               </div>
+
+              {/* Zoom Controls (New) */}
+              <div className="flex gap-2 bg-gray-800 p-2 rounded-xl">
+                <button onClick={() => setCanvasScale(s => Math.min(10, s * 1.2))} className="flex-1 py-3 bg-gray-700 rounded-lg text-white font-bold flex items-center justify-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 7v6m-3-3h6" /></svg>
+                  Zoom +
+                </button>
+                <button onClick={() => setCanvasScale(s => Math.max(0.1, s / 1.2))} className="flex-1 py-3 bg-gray-700 rounded-lg text-white font-bold flex items-center justify-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 10h6" /></svg>
+                  Zoom -
+                </button>
+                <button onClick={centerImage} className="flex-1 py-3 bg-gray-700 rounded-lg text-white font-bold flex items-center justify-center gap-2">
+                  Fit
+                </button>
+              </div>
+
               <div className="flex gap-4">
                 <button onClick={() => { setActiveTool(ToolMode.FILL); setActiveMobileTab('none'); }} className={`flex-1 p-4 rounded-xl flex flex-col items-center gap-2 ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
                   <Icons.Bucket /> <span className="font-bold">Fill</span>
@@ -740,7 +826,7 @@ const App: React.FC = () => {
           )}
 
           {activeMobileTab === 'settings' && (<>
-            <div className="space-y-4">
+            <div className="space-y-4 pb-8">
               <h3 className="text-gray-400 font-bold uppercase text-xs tracking-wider">View Settings</h3>
               <button onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
                 <span className="text-gray-200">Show Numbers</span>
@@ -762,7 +848,7 @@ const App: React.FC = () => {
               </button>
             </div>
 
-            <div className="pt-4 border-t border-gray-800">
+            <div className="pt-4 border-t border-gray-800 pb-8">
               {user ? (
                 <button onClick={handleLogout} className="w-full p-4 bg-red-900/20 text-red-400 rounded-xl font-bold">Logout</button>
               ) : (
@@ -794,34 +880,11 @@ const App: React.FC = () => {
             onClick={() => toggleMobileTab('settings')}
             className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'settings' ? 'text-indigo-400' : 'text-gray-500'}`}
           >
-            <Icons.Wand />
-            <span className="text-xs font-bold">Options</span>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+            <span className="text-xs font-bold">Settings</span>
           </button>
         </div>
       </div>
-
-
-
-      <main className="flex-1 bg-gray-800 relative shadow-inner overflow-hidden flex flex-col items-center justify-center pb-16 md:pb-0">
-        {processedData && (
-          <ColoringCanvas
-            data={processedData}
-            palette={currentPalette}
-            activeColor={activeColor}
-            config={toolConfig}
-            activeTool={activeTool}
-            filledRegions={filledRegions}
-            onFillRegion={(id) => {
-              const next = new Set(filledRegions);
-              next.add(id);
-              setFilledRegions(next);
-            }}
-            showOriginal={showOriginal}
-            originalImageSrc={sourceImage}
-            onToast={addToast}
-          />
-        )}
-      </main>
     </div>
   );
 };

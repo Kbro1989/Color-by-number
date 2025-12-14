@@ -12,6 +12,11 @@ interface ColoringCanvasProps {
     showOriginal: boolean;
     originalImageSrc: string | null;
     onToast: (msg: string, type: 'info' | 'error' | 'success') => void;
+    // Controlled Props
+    scale: number;
+    offset: { x: number, y: number };
+    onZoom: (scale: number) => void;
+    onPan: (x: number, y: number) => void;
 }
 
 const PAINT_BUCKET_CURSOR = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(1px 1px 1px rgba(0,0,0,0.4));"><path d="M19 11l-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11z"/><path d="M5 2l5 5"/><path d="M2 13l2.6-2.6"/><path d="M22 13a3 3 0 0 0-3 3 7 7 0 0 1-7 7"/></svg>') 0 22, auto`;
@@ -36,14 +41,15 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
     onFillRegion,
     showOriginal,
     originalImageSrc,
-    onToast
+    onToast,
+    // New Props for Controlled State
+    scale,
+    offset,
+    onZoom,
+    onPan
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-
-    // Viewport
-    const [scale, setScale] = useState(1);
-    const [offset, setOffset] = useState({ x: 0, y: 0 });
 
     // Keyboard Modifiers
     const [isSpaceHeld, setIsSpaceHeld] = useState(false);
@@ -250,24 +256,8 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         return () => cancelAnimationFrame(animFrameRef.current);
     }, [draw]);
 
-    // Center Image initially
-    const centerImage = useCallback(() => {
-        if (containerRef.current) {
-            const { clientWidth, clientHeight } = containerRef.current;
-            const scaleX = clientWidth / data.originalWidth;
-            const scaleY = clientHeight / data.originalHeight;
-            const startScale = Math.min(scaleX, scaleY, 1) * 0.9;
-            setScale(startScale);
-            setOffset({
-                x: (clientWidth - data.originalWidth * startScale) / 2,
-                y: (clientHeight - data.originalHeight * startScale) / 2
-            });
-        }
-    }, [data]);
-
-    useEffect(() => {
-        centerImage();
-    }, [centerImage]);
+    // Center Image initially Logic Moved to Parent or triggered via Effect? 
+    // Parent handles initial scale/offset.
 
     // --- Hint System (Smart Navigation) ---
     const useHint = () => {
@@ -295,10 +285,8 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             const newOffsetX = (clientWidth / 2) - (target.centroid.x * newScale);
             const newOffsetY = (clientHeight / 2) - (target.centroid.y * newScale);
 
-            // Smooth transition (React state update triggers re-render, CSS transition handles smoothness if applied, 
-            // but here we are using canvas + absolute pos. We set state directly.)
-            setScale(newScale);
-            setOffset({ x: newOffsetX, y: newOffsetY });
+            onZoom(newScale);
+            onPan(newOffsetX, newOffsetY);
 
             // Flash it
             setFlashRegion({ id: target.id, start: performance.now() });
@@ -388,10 +376,10 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
 
     const handlePointerMove = (e: React.PointerEvent) => {
         if (isDraggingRef.current && effectiveTool === ToolMode.PAN) {
-            setOffset({
-                x: e.clientX - offsetStartRef.current.x,
-                y: e.clientY - offsetStartRef.current.y
-            });
+            onPan(
+                e.clientX - offsetStartRef.current.x,
+                e.clientY - offsetStartRef.current.y
+            );
         }
     };
 
@@ -404,7 +392,7 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
         e.stopPropagation();
         const zoomSensitivity = 0.001;
         const newScale = Math.max(0.05, Math.min(10, scale - e.deltaY * zoomSensitivity));
-        setScale(newScale);
+        onZoom(newScale);
     };
 
     // --- Touch Logic ---
@@ -447,33 +435,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                 offsetStartRef.current = { x: offset.x, y: offset.y }; // Relative to current
                 dragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             }
-            // If in FILL mode, we wait for TouchEnd to determine if it was a Tap or a quick drag (scrolling)
-            // Actually, standard behavior: Panning with one finger moves canvas? 
-            // User requested "touchpad functionality". Usually 1 finger = pan, 2 finger = zoom.
-            // But if effectiveTool is FILL, 1 finger should be Paint?
-            // Let's stick to Tool Mode:
-            // FILL: 1 finger tap = Paint. 1 finger drag = Pan (if we want to be nice? Or just Paint Drag?)
-            // Let's make 1 finger drag = Pan ALWAYS if started on background? No.
-
-            // Revised: 
-            // 2 Fingers = ALWAYS Pan/Zoom.
-            // 1 Finger = Action based on Tool.
-            //   - PAN Tool: 1 finger Pan.
-            //   - FILL Tool: 1 finger Tap = Fill. 1 Finger Drag = Pan? (Common in map apps).
-            // Let's allow 1 finger drag to Pan even in Fill mode for mobile convenience? 
-            // No, that makes painting hard.
-            // Let's rely on explicit Pan Tool or Two Finger Pan.
-
-            // Mobile Standard:
-            // One finger drag = Pan
-            // One finger Tap = Action
-            // But painting needs precision.
-
-            // Let's implement:
-            // 1 Finger Start: Record pos.
-            // 1 Finger Move: If distance > threshold, treat as Pan.
-            // 1 Finger End: If distance < threshold, treat as Click (Fill).
-
             isDraggingRef.current = true; // Assume drag potential
             dragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             offsetStartRef.current = { ...offset };
@@ -487,37 +448,19 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             const center = getTouchCenter(e.touches[0], e.touches[1]);
 
             // Zoom
-            const zoomFactor = dist / touchStartDistRef.current;
-            const newScale = Math.max(0.1, Math.min(10, scale * zoomFactor));
-
-            // Pan (Move center)
-            // Delta of center point
-            if (touchStartCenterRef.current) {
-                const dx = center.x - touchStartCenterRef.current.x;
-                const dy = center.y - touchStartCenterRef.current.y;
-
-                // Apply
-                setScale(newScale);
-                // Complex offset math omitted for stability, just zooming for now or simple pan
-                // To do 'Google Maps' style pinch zoom is complex with React state.
-                // Simplified: Just zoom center for now, or just scale.
-                // Let's just update scale relative to start, and reset start every move? No.
-
-                // Iterative approach:
-                // Calculate change since LAST move
-                // That's safer.
-            }
+            // const zoomFactor = dist / touchStartDistRef.current;
+            // const newScale = Math.max(0.1, Math.min(10, scale * zoomFactor));
 
             // Actually simpler: Just Scale.
             // User can Pan separately.
-            setScale(s => Math.max(0.1, Math.min(10, s * (dist / touchStartDistRef.current))));
+            onZoom(Math.max(0.1, Math.min(10, scale * (dist / touchStartDistRef.current))));
             touchStartDistRef.current = dist; // Reset base for next frame
 
             // Also Pan?
             if (lastTouchRef.current) {
                 const dx = center.x - lastTouchRef.current.x;
                 const dy = center.y - lastTouchRef.current.y;
-                setOffset(o => ({ x: o.x + dx, y: o.y + dy }));
+                onPan(offset.x + dx, offset.y + dy);
                 lastTouchRef.current = center;
             }
 
@@ -528,12 +471,7 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             const dx = t.clientX - lastTouchRef.current!.x;
             const dy = t.clientY - lastTouchRef.current!.y;
 
-            // If effectiveTool is FILL, we treat drag as Pan?
-            // Or do we only Pan if they moved significantly?
-            // Let's always Pan. It's user friendly. 
-            // Then Tapping is distinct.
-
-            setOffset(o => ({ x: o.x + dx, y: o.y + dy }));
+            onPan(offset.x + dx, offset.y + dy);
             lastTouchRef.current = { x: t.clientX, y: t.clientY };
         }
     };
@@ -601,34 +539,6 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                     }}
                 />
             )}
-
-            {/* On-Canvas Controls */}
-            <div
-                className="absolute bottom-6 right-6 flex flex-col gap-2 p-2 bg-gray-900/80 backdrop-blur rounded-xl border border-gray-700 shadow-xl pointer-events-auto"
-                onPointerDown={(e) => e.stopPropagation()}
-            >
-                <button
-                    onClick={() => setScale(s => Math.min(10, s * 1.2))}
-                    className="p-2 hover:bg-gray-700 rounded-lg text-white"
-                    title="Zoom In"
-                >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                </button>
-                <button
-                    onClick={() => setScale(s => Math.max(0.1, s / 1.2))}
-                    className="p-2 hover:bg-gray-700 rounded-lg text-white"
-                    title="Zoom Out"
-                >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
-                </button>
-                <button
-                    onClick={centerImage}
-                    className="p-2 hover:bg-gray-700 rounded-lg text-white"
-                    title="Reset View"
-                >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-                </button>
-            </div>
 
             {/* Smart Navigation / Hint Button */}
             <div
