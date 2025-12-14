@@ -188,36 +188,26 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
             ctx.putImageData(imgData, 0, 0);
 
         } else {
-            // Delta Update Strategy: Batched Path (Fastest for sparse)
+            // Delta Update Strategy: Direct Buffer Manipulation (Much faster than ctx.rect on mobile)
             const newRegions: number[] = [];
             filledRegions.forEach(rId => {
                 if (!lastFilledRegionsRef.current.has(rId)) newRegions.push(rId);
             });
 
-            // Optimize: Group by color to minimize style changes
-            const updatesByColor = new Map<number, number[]>();
-            newRegions.forEach(rId => {
-                const r = regionsById.get(rId);
-                if (r) {
-                    if (!updatesByColor.has(r.colorId)) updatesByColor.set(r.colorId, []);
-                    updatesByColor.get(r.colorId)!.push(rId);
-                }
-            });
+            if (newRegions.length > 0) {
+                const imgData = ctx.getImageData(0, 0, w, h);
+                const buf = new Uint32Array(imgData.data.buffer);
 
-            updatesByColor.forEach((rIds, colorId) => {
-                const c = palette[colorId].rgb;
-                ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
-                ctx.beginPath();
-                for (const rId of rIds) {
+                newRegions.forEach(rId => {
                     const region = regionsById.get(rId);
                     if (region) {
-                        for (const pIdx of region.pixels) {
-                            ctx.rect(pIdx % w, Math.floor(pIdx / w), 1, 1);
-                        }
+                        const c = palette[region.colorId].rgb;
+                        const colorVal = (255 << 24) | (c.b << 16) | (c.g << 8) | c.r;
+                        for (const pIdx of region.pixels) buf[pIdx] = colorVal;
                     }
-                }
-                ctx.fill();
-            });
+                });
+                ctx.putImageData(imgData, 0, 0);
+            }
         }
 
         lastFilledRegionsRef.current = new Set(filledRegions);
@@ -589,7 +579,7 @@ const ColoringCanvas: React.FC<ColoringCanvasProps> = ({
                 />
             )}
             <div
-                className="absolute bottom-6 left-6 pointer-events-auto flex gap-2"
+                className="absolute bottom-24 right-4 md:bottom-6 md:left-6 pointer-events-auto flex gap-2 z-20"
                 onPointerDown={(e) => e.stopPropagation()}
             >
                 <button
