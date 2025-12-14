@@ -290,375 +290,214 @@ const App: React.FC = () => {
 
   if (stage === AppStage.UPLOAD) {
     return (
-      <div className="h-screen w-screen bg-gray-950 text-gray-100 overflow-y-auto custom-scrollbar flex flex-col p-4">
-        <ToastContainer toasts={toasts} removeToast={removeToast} />
-        <div className="max-w-xl w-full mx-auto my-auto space-y-8 py-8">
-          <div className="text-center">
-            <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 mb-4">
-              ChromaNumber
-            </h1>
-            <p className="text-gray-400 text-lg">AI-Powered Precision Coloring</p>
-          </div>
+      <div className="fixed inset-0 bg-gray-950 text-gray-100 overflow-y-auto custom-scrollbar">
+        <div className="min-h-full w-full flex flex-col items-center justify-center p-4 pb-48 md:pb-4">
+          <ToastContainer toasts={toasts} removeToast={removeToast} />
+          <div className="max-w-xl w-full space-y-8 py-8">
+            <div className="text-center">
+              <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 mb-4">
+                ChromaNumber
+              </h1>
+              <p className="text-gray-400 text-lg">AI-Powered Precision Coloring</p>
+            </div>
 
-          <div className="bg-gray-900 rounded-2xl p-8 shadow-2xl border border-gray-800 space-y-6">
-            {sourceImage ? (
-              <div className="space-y-6">
-                <div className="relative group rounded-xl overflow-hidden border-2 border-gray-700 bg-gray-950">
-                  <img src={sourceImage} alt="Preview" className="w-full object-contain max-h-80" />
-                  <button
-                    onClick={() => setSourceImage(null)}
-                    className="absolute top-2 right-2 p-2 bg-red-600/90 hover:bg-red-600 rounded-full text-white shadow-lg"
-                  >
-                    <Icons.Undo />
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {/* Style Selector */}
-                  <select
-                    value={selectedStyle}
-                    onChange={(e) => setSelectedStyle(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                  >
-                    {AI_STYLES.map(s => <option key={s.label} value={s.value}>{s.label} Style</option>)}
-                  </select>
-
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Remix Prompt: e.g. 'Add a sunset'"
-                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                      value={remixPrompt}
-                      onChange={(e) => setRemixPrompt(e.target.value)}
-                    />
+            <div className="bg-gray-900 rounded-2xl p-8 shadow-2xl border border-gray-800 space-y-6">
+              {sourceImage ? (
+                <div className="space-y-6">
+                  <div className="relative group rounded-xl overflow-hidden border-2 border-gray-700 bg-gray-950">
+                    <img src={sourceImage} alt="Preview" className="w-full object-contain max-h-80" />
                     <button
-                      onClick={handleRemix}
-                      disabled={isProcessing || !remixPrompt}
-                      className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors flex items-center gap-2"
+                      onClick={() => setSourceImage(null)}
+                      className="absolute top-2 right-2 p-2 bg-red-600/90 hover:bg-red-600 rounded-full text-white shadow-lg"
                     >
-                      {isProcessing ? '...' : <Icons.Wand />}
+                      <Icons.Undo />
                     </button>
                   </div>
 
-                  <button
-                    onClick={processImage}
-                    disabled={isProcessing}
-                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-bold text-lg shadow-lg transform transition active:scale-[0.98] disabled:opacity-50"
-                  >
-                    {isProcessing ? 'Generating Regions...' : 'Create Coloring Page'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="border-4 border-dashed border-gray-800 rounded-2xl p-12 text-center hover:border-purple-500 hover:bg-gray-800/30 transition-all cursor-pointer relative group">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                    onChange={handleFileUpload}
-                  />
-                  <div className="flex flex-col items-center gap-4 group-hover:scale-105 transition-transform">
-                    <div className="p-5 bg-gray-800 rounded-full text-purple-400 shadow-xl">
-                      <Icons.Upload />
-                    </div>
-                    <h3 className="text-2xl font-bold text-gray-300">Upload Image</h3>
-                    <p className="text-gray-500">Drag & drop or click to browse</p>
-                  </div>
-                </div>
+                  <div className="space-y-4">
+                    {/* Style Selector */}
+                    <select
+                      value={selectedStyle}
+                      onChange={(e) => setSelectedStyle(e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                    >
+                      {AI_STYLES.map(s => <option key={s.label} value={s.value}>{s.label} Style</option>)}
+                    </select>
 
-                <div className="flex items-center gap-4 py-2">
-                  <div className="h-px flex-1 bg-gray-800"></div>
-                  <span className="text-gray-500 text-xs font-bold tracking-wider">OR GENERATE WITH AI</span>
-                  <div className="h-px flex-1 bg-gray-800"></div>
-                </div>
-
-                <div className="space-y-4 bg-gray-800/50 p-6 rounded-xl border border-gray-800">
-                  {!generatedPreview ? (
-                    <>
-                      <select
-                        value={selectedStyle}
-                        onChange={(e) => setSelectedStyle(e.target.value)}
-                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none mb-2"
-                      >
-                        {AI_STYLES.map(s => <option key={s.label} value={s.value}>{s.label} Style</option>)}
-                      </select>
-                      <textarea
-                        placeholder="Describe an image to color (e.g. 'A cute baby dragon sitting on a pile of gold coins')"
-                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:outline-none min-h-[80px] text-sm resize-none text-gray-200"
-                        value={genPrompt}
-                        onChange={(e) => setGenPrompt(e.target.value)}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Remix Prompt: e.g. 'Add a sunset'"
+                        className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                        value={remixPrompt}
+                        onChange={(e) => setRemixPrompt(e.target.value)}
                       />
                       <button
-                        onClick={handleGenerate}
-                        disabled={isGenerating || !genPrompt}
-                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-white"
+                        onClick={handleRemix}
+                        disabled={isProcessing || !remixPrompt}
+                        className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors flex items-center gap-2"
                       >
-                        {isGenerating ? 'Dreaming...' : <><Icons.Wand /> Generate Image</>}
+                        {isProcessing ? '...' : <Icons.Wand />}
                       </button>
-                    </>
-                  ) : (
-                    <div className="space-y-4 animate-fade-in">
-                      <div className="relative rounded-lg overflow-hidden border-2 border-indigo-500/50">
-                        <img src={generatedPreview} className="w-full h-48 object-cover" alt="Generated Preview" />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setSourceImage(generatedPreview);
-                            setGeneratedPreview(null);
-                            setGenPrompt('');
-                          }}
-                          className="flex-1 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold text-white shadow-lg"
-                        >
-                          Use This Image
-                        </button>
-                        <button
-                          onClick={() => setGeneratedPreview(null)}
-                          className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium text-gray-300"
-                        >
-                          Try Again
-                        </button>
-                      </div>
                     </div>
-                  )}
+
+                    <button
+                      onClick={processImage}
+                      disabled={isProcessing}
+                      className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-bold text-lg shadow-lg transform transition active:scale-[0.98] disabled:opacity-50"
+                    >
+                      {isProcessing ? 'Generating Regions...' : 'Create Coloring Page'}
+                    </button>
+                  </div>
                 </div>
-              </>
-            )}
+              ) : (
+                <>
+                  <div className="border-4 border-dashed border-gray-800 rounded-2xl p-12 text-center hover:border-purple-500 hover:bg-gray-800/30 transition-all cursor-pointer relative group">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      onChange={handleFileUpload}
+                    />
+                    <div className="flex flex-col items-center gap-4 group-hover:scale-105 transition-transform">
+                      <div className="p-5 bg-gray-800 rounded-full text-purple-400 shadow-xl">
+                        <Icons.Upload />
+                      </div>
+                      <h3 className="text-2xl font-bold text-gray-300">Upload Image</h3>
+                      <p className="text-gray-500">Drag & drop or click to browse</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 py-2">
+                    <div className="h-px flex-1 bg-gray-800"></div>
+                    <span className="text-gray-500 text-xs font-bold tracking-wider">OR GENERATE WITH AI</span>
+                    <div className="h-px flex-1 bg-gray-800"></div>
+                  </div>
+
+                  <div className="space-y-4 bg-gray-800/50 p-6 rounded-xl border border-gray-800">
+                    {!generatedPreview ? (
+                      <>
+                        <select
+                          value={selectedStyle}
+                          onChange={(e) => setSelectedStyle(e.target.value)}
+                          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none mb-2"
+                        >
+                          {AI_STYLES.map(s => <option key={s.label} value={s.value}>{s.label} Style</option>)}
+                        </select>
+                        <textarea
+                          placeholder="Describe an image to color (e.g. 'A cute baby dragon sitting on a pile of gold coins')"
+                          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:outline-none min-h-[80px] text-sm resize-none text-gray-200"
+                          value={genPrompt}
+                          onChange={(e) => setGenPrompt(e.target.value)}
+                        />
+                        <button
+                          onClick={handleGenerate}
+                          disabled={isGenerating || !genPrompt}
+                          className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-white"
+                        >
+                          {isGenerating ? 'Dreaming...' : <><Icons.Wand /> Generate Image</>}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="space-y-4 animate-fade-in">
+                        <div className="relative rounded-lg overflow-hidden border-2 border-indigo-500/50">
+                          <img src={generatedPreview} className="w-full h-48 object-cover" alt="Generated Preview" />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setSourceImage(generatedPreview);
+                              setGeneratedPreview(null);
+                              setGenPrompt('');
+                            }}
+                            className="flex-1 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold text-white shadow-lg"
+                          >
+                            Use This Image
+                          </button>
+                          <button
+                            onClick={() => setGeneratedPreview(null)}
+                            className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium text-gray-300"
+                          >
+                            Try Again
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    );
+        );
   }
 
-  if (stage === AppStage.PROCESSING && !processedData) {
+        if (stage === AppStage.PROCESSING && !processedData) {
     return (
-      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center space-y-6">
-        <div className="w-20 h-20 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-white mb-2">Analyzing Image Topology</h2>
-          <p className="text-gray-500">Generating vector regions and palette...</p>
+        <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center space-y-6">
+          <div className="w-20 h-20 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-white mb-2">Analyzing Image Topology</h2>
+            <p className="text-gray-500">Generating vector regions and palette...</p>
+          </div>
         </div>
-      </div>
-    )
+        )
   }
 
-  // Mobile UI State
-  const [activeMobileTab, setActiveMobileTab] = useState<'none' | 'colors' | 'tools' | 'settings'>('none');
+        // Mobile UI State
+        const [activeMobileTab, setActiveMobileTab] = useState<'none' | 'colors' | 'tools' | 'settings'>('none');
 
-  if (stage === AppStage.UPLOAD) {
-    // ... (Existing Upload Code) ...
-    // Note: Since I am replacing the entire component return, I will include the unchanged parts in the full replacement if needed, 
-    // but the tool asks for specific chunks. 
-    // Wait, the "chunk" based approach is risky for major layout refactors if conditional logic wraps large blocks.
-    // I will use replace_file_content to rewrite the `return` statement block.
-    // But first let's see if I can just swap the `return` of the main component.
-    // The previous view shows line 446 is where `return (` starts for the main app.
-  }
+        if (stage === AppStage.UPLOAD) {
+          // ... (Existing Upload Code) ...
+          // Note: Since I am replacing the entire component return, I will include the unchanged parts in the full replacement if needed, 
+          // but the tool asks for specific chunks. 
+          // Wait, the "chunk" based approach is risky for major layout refactors if conditional logic wraps large blocks.
+          // I will use replace_file_content to rewrite the `return` statement block.
+          // But first let's see if I can just swap the `return` of the main component.
+          // The previous view shows line 446 is where `return (` starts for the main app.
+        }
 
   // Helper toggle for mobile tabs
   const toggleMobileTab = (tab: 'colors' | 'tools' | 'settings') => {
-    setActiveMobileTab(current => current === tab ? 'none' : tab);
+          setActiveMobileTab(current => current === tab ? 'none' : tab);
   };
 
-  return (
-    <div className="h-screen w-screen flex flex-col md:flex-row bg-gray-950 overflow-hidden text-gray-200 font-sans relative">
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+        return (
+        <div className="h-screen w-screen flex flex-col md:flex-row bg-gray-950 overflow-hidden text-gray-200 font-sans relative">
+          <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      {/* Celebration Modal */}
-      {showCelebration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
-          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 p-8 md:p-10 rounded-3xl text-center shadow-2xl border border-purple-500/50 max-w-md w-full">
-            <h2 className="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 mb-4">
-              Outstanding!
-            </h2>
-            <p className="text-gray-200 text-lg mb-8">You've completed the artwork with 100% accuracy.</p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                onClick={downloadImage}
-                className="px-6 py-3 bg-white text-purple-900 font-bold rounded-xl shadow-lg hover:scale-105 transition-transform"
-              >
-                Save Masterpiece
-              </button>
-              <button
-                onClick={() => setShowCelebration(false)}
-                className="px-6 py-3 bg-purple-800/50 text-purple-200 font-bold rounded-xl hover:bg-purple-800 transition-colors"
-              >
-                Keep Admiring
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DESKTOP SIDEBAR (Hidden on Mobile) */}
-      <aside className="hidden md:flex w-80 h-full bg-gray-900 border-r border-gray-800 flex-col shrink-0 z-20 shadow-2xl">
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between sticky top-0 bg-gray-900 z-10">
-          <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">
-            ChromaNumber
-          </h1>
-          <button
-            onClick={() => {
-              if (confirm("Exit? Progress lost.")) {
-                setStage(AppStage.UPLOAD);
-                setSourceImage(null);
-                setProcessedData(null);
-              }
-            }}
-            className="p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition"
-            title="Back to Menu"
-          >
-            <Icons.Undo />
-          </button>
-        </div>
-
-        <div className="p-4 border-b border-gray-800">
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs font-semibold uppercase text-gray-500">
-              <span>Completion</span>
-              <span>{Math.round(progress)}%</span>
-            </div>
-            <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-green-400 to-emerald-600 transition-all duration-500 ease-out"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
-          {/* Desktop Content (Reusing existing components for brevity in this tool call, assumed copy-paste logic) */}
-          {/* Desktop Actions */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onPointerDown={() => setShowOriginal(true)}
-              onPointerUp={() => setShowOriginal(false)}
-              onPointerLeave={() => setShowOriginal(false)}
-              className={`flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all select-none ${showOriginal ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/50 scale-95' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 active:scale-95'}`}
-            >
-              <Icons.Eye /> <span>View</span>
-            </button>
-            <button
-              onClick={downloadImage}
-              className="flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium transition-all"
-            >
-              <Icons.Download /> <span>Save</span>
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Tools</h3>
-            <div className="flex gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700">
-              <button
-                onClick={() => setActiveTool(ToolMode.FILL)}
-                className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
-              >
-                <Icons.Bucket /> Fill
-              </button>
-              <button
-                onClick={() => setActiveTool(ToolMode.PAN)}
-                className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
-              >
-                <Icons.Hand /> Pan
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Settings</h3>
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showNumbers ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}># 123</button>
-              <button onClick={() => setToolConfig(p => ({ ...p, showBorders: !p.showBorders }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showBorders ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>Borders</button>
-              <button onClick={() => setToolConfig(p => ({ ...p, highlightActive: !p.highlightActive }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.highlightActive ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>Highlight</button>
-            </div>
-          </div>
-
-          <div className="space-y-3 pb-4">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Colors</h3>
-            <div className="grid grid-cols-4 gap-2">
-              {currentPalette.map((color) => {
-                const isActive = activeColor?.id === color.id;
-                const pixelsFilled = colorProgressMap.get(color.id) || 0;
-                const isComplete = pixelsFilled >= color.count;
-                const percentage = Math.min(100, (pixelsFilled / color.count) * 100);
-                return (
+          {/* Celebration Modal */}
+          {showCelebration && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
+              <div className="bg-gradient-to-br from-purple-900 to-indigo-900 p-8 md:p-10 rounded-3xl text-center shadow-2xl border border-purple-500/50 max-w-md w-full">
+                <h2 className="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-pink-500 mb-4">
+                  Outstanding!
+                </h2>
+                <p className="text-gray-200 text-lg mb-8">You've completed the artwork with 100% accuracy.</p>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <button
-                    key={color.id}
-                    onClick={() => setActiveColor(color)}
-                    className={`aspect-square rounded-lg flex flex-col items-center justify-center relative group overflow-hidden transition-all duration-200 ${isActive ? 'ring-2 ring-white scale-105 z-10 shadow-xl' : 'opacity-80 hover:opacity-100 hover:scale-105'}`}
-                    style={{ backgroundColor: color.hex }}
+                    onClick={downloadImage}
+                    className="px-6 py-3 bg-white text-purple-900 font-bold rounded-xl shadow-lg hover:scale-105 transition-transform"
                   >
-                    <span className={`text-xs font-bold z-10 ${(color.rgb.r + color.rgb.g + color.rgb.b) > 400 ? 'text-black' : 'text-white'}`}>{isComplete ? <Icons.Check /> : color.id}</span>
-                    <div className="absolute bottom-0 left-0 w-full h-1 bg-black/20"><div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${percentage}%` }} /></div>
+                    Save Masterpiece
                   </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* MOBILE DRAWER (Overlay) */}
-      <div
-        className={`md:hidden fixed inset-x-0 bottom-0 z-30 bg-gray-900 border-t border-gray-800 transform transition-transform duration-300 ease-out shadow-2xl rounded-t-2xl pb-safe ${activeMobileTab !== 'none' ? 'translate-y-0' : 'translate-y-full'}`}
-        style={{ maxHeight: '60vh' }}
-      >
-        {/* Drawer Handle */}
-        <div className="w-full flex justify-center pt-2 pb-1" onPointerDown={() => setActiveMobileTab('none')}>
-          <div className="w-12 h-1.5 bg-gray-700 rounded-full"></div>
-        </div>
-
-        {/* Drawer Content */}
-        <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(60vh - 20px)' }}>
-
-          {activeMobileTab === 'colors' && (
-            <div className="grid grid-cols-5 gap-3">
-              {currentPalette.map((color) => {
-                const isActive = activeColor?.id === color.id;
-                const pixelsFilled = colorProgressMap.get(color.id) || 0;
-                const isComplete = pixelsFilled >= color.count;
-                const percentage = Math.min(100, (pixelsFilled / color.count) * 100);
-                return (
                   <button
-                    key={color.id}
-                    onClick={() => { setActiveColor(color); setActiveMobileTab('none'); }}
-                    className={`aspect-square rounded-lg flex flex-col items-center justify-center relative overflow-hidden ${isActive ? 'ring-2 ring-white scale-110 z-10' : 'opacity-90'}`}
-                    style={{ backgroundColor: color.hex }}
+                    onClick={() => setShowCelebration(false)}
+                    className="px-6 py-3 bg-purple-800/50 text-purple-200 font-bold rounded-xl hover:bg-purple-800 transition-colors"
                   >
-                    <span className={`text-xs font-bold z-10 ${(color.rgb.r + color.rgb.g + color.rgb.b) > 400 ? 'text-black' : 'text-white'}`}>{isComplete ? <Icons.Check /> : color.id}</span>
-                    <div className="absolute bottom-0 left-0 w-full h-1 bg-black/20"><div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${percentage}%` }} /></div>
+                    Keep Admiring
                   </button>
-                );
-              })}
+                </div>
+              </div>
             </div>
           )}
 
-          {activeMobileTab === 'tools' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center text-gray-300 mb-2">
-                <span className="font-bold">Tools</span>
-              </div>
-              <div className="flex gap-4">
-                <button onClick={() => { setActiveTool(ToolMode.FILL); setActiveMobileTab('none'); }} className={`flex-1 p-4 rounded-xl flex flex-col items-center gap-2 ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
-                  <Icons.Bucket /> <span className="font-bold">Fill</span>
-                </button>
-                <button onClick={() => { setActiveTool(ToolMode.PAN); setActiveMobileTab('none'); }} className={`flex-1 p-4 rounded-xl flex flex-col items-center gap-2 ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
-                  <Icons.Hand /> <span className="font-bold">Pan</span>
-                </button>
-              </div>
-
-              <div className="h-px bg-gray-800"></div>
-
-              <div className="flex gap-4">
-                <button onPointerDown={() => setShowOriginal(true)} onPointerUp={() => setShowOriginal(false)} className="flex-1 p-4 bg-gray-800 rounded-xl flex items-center justify-center gap-2 text-gray-300 font-bold active:bg-gray-700">
-                  <Icons.Eye /> View Original
-                </button>
-                <button onClick={downloadImage} className="flex-1 p-4 bg-gray-800 rounded-xl flex items-center justify-center gap-2 text-gray-300 font-bold active:bg-gray-700">
-                  <Icons.Download /> Save Image
-                </button>
-              </div>
-
+          {/* DESKTOP SIDEBAR (Hidden on Mobile) */}
+          <aside className="hidden md:flex w-80 h-full bg-gray-900 border-r border-gray-800 flex-col shrink-0 z-20 shadow-2xl">
+            <div className="p-4 border-b border-gray-800 flex items-center justify-between sticky top-0 bg-gray-900 z-10">
+              <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">
+                ChromaNumber
+              </h1>
               <button
                 onClick={() => {
                   if (confirm("Exit? Progress lost.")) {
@@ -667,90 +506,252 @@ const App: React.FC = () => {
                     setProcessedData(null);
                   }
                 }}
-                className="w-full p-4 bg-red-900/30 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 mt-4"
+                className="p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition"
+                title="Back to Menu"
               >
-                <Icons.Undo /> Exit to Menu
+                <Icons.Undo />
               </button>
             </div>
-          )}
 
-          {activeMobileTab === 'settings' && (
-            <div className="space-y-4">
-              <h3 className="text-gray-400 font-bold uppercase text-xs tracking-wider">View Settings</h3>
-              <button onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
-                <span className="text-gray-200">Show Numbers</span>
-                <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.showNumbers ? 'bg-indigo-600' : 'bg-gray-700'}`}>
-                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.showNumbers ? 'translate-x-6' : 'translate-x-0'}`} />
+            <div className="p-4 border-b border-gray-800">
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs font-semibold uppercase text-gray-500">
+                  <span>Completion</span>
+                  <span>{Math.round(progress)}%</span>
                 </div>
+                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-green-400 to-emerald-600 transition-all duration-500 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+              {/* Desktop Content (Reusing existing components for brevity in this tool call, assumed copy-paste logic) */}
+              {/* Desktop Actions */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onPointerDown={() => setShowOriginal(true)}
+                  onPointerUp={() => setShowOriginal(false)}
+                  onPointerLeave={() => setShowOriginal(false)}
+                  className={`flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all select-none ${showOriginal ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/50 scale-95' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 active:scale-95'}`}
+                >
+                  <Icons.Eye /> <span>View</span>
+                </button>
+                <button
+                  onClick={downloadImage}
+                  className="flex items-center justify-center gap-2 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg font-medium transition-all"
+                >
+                  <Icons.Download /> <span>Save</span>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Tools</h3>
+                <div className="flex gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700">
+                  <button
+                    onClick={() => setActiveTool(ToolMode.FILL)}
+                    className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                  >
+                    <Icons.Bucket /> Fill
+                  </button>
+                  <button
+                    onClick={() => setActiveTool(ToolMode.PAN)}
+                    className={`flex-1 py-2 rounded-md flex justify-center items-center gap-2 transition-all ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                  >
+                    <Icons.Hand /> Pan
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Settings</h3>
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showNumbers ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}># 123</button>
+                  <button onClick={() => setToolConfig(p => ({ ...p, showBorders: !p.showBorders }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.showBorders ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>Borders</button>
+                  <button onClick={() => setToolConfig(p => ({ ...p, highlightActive: !p.highlightActive }))} className={`flex-1 py-2 text-xs rounded-md border ${toolConfig.highlightActive ? 'bg-indigo-900/30 border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>Highlight</button>
+                </div>
+              </div>
+
+              <div className="space-y-3 pb-4">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Colors</h3>
+                <div className="grid grid-cols-4 gap-2">
+                  {currentPalette.map((color) => {
+                    const isActive = activeColor?.id === color.id;
+                    const pixelsFilled = colorProgressMap.get(color.id) || 0;
+                    const isComplete = pixelsFilled >= color.count;
+                    const percentage = Math.min(100, (pixelsFilled / color.count) * 100);
+                    return (
+                      <button
+                        key={color.id}
+                        onClick={() => setActiveColor(color)}
+                        className={`aspect-square rounded-lg flex flex-col items-center justify-center relative group overflow-hidden transition-all duration-200 ${isActive ? 'ring-2 ring-white scale-105 z-10 shadow-xl' : 'opacity-80 hover:opacity-100 hover:scale-105'}`}
+                        style={{ backgroundColor: color.hex }}
+                      >
+                        <span className={`text-xs font-bold z-10 ${(color.rgb.r + color.rgb.g + color.rgb.b) > 400 ? 'text-black' : 'text-white'}`}>{isComplete ? <Icons.Check /> : color.id}</span>
+                        <div className="absolute bottom-0 left-0 w-full h-1 bg-black/20"><div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${percentage}%` }} /></div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          {/* MOBILE DRAWER (Overlay) */}
+          <div
+            className={`md:hidden fixed inset-x-0 bottom-0 z-30 bg-gray-900 border-t border-gray-800 transform transition-transform duration-300 ease-out shadow-2xl rounded-t-2xl pb-safe ${activeMobileTab !== 'none' ? 'translate-y-0' : 'translate-y-full'}`}
+            style={{ maxHeight: '60vh' }}
+          >
+            {/* Drawer Handle */}
+            <div className="w-full flex justify-center pt-2 pb-1" onPointerDown={() => setActiveMobileTab('none')}>
+              <div className="w-12 h-1.5 bg-gray-700 rounded-full"></div>
+            </div>
+
+            {/* Drawer Content */}
+            <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(60vh - 20px)' }}>
+
+              {activeMobileTab === 'colors' && (
+                <div className="grid grid-cols-5 gap-3">
+                  {currentPalette.map((color) => {
+                    const isActive = activeColor?.id === color.id;
+                    const pixelsFilled = colorProgressMap.get(color.id) || 0;
+                    const isComplete = pixelsFilled >= color.count;
+                    const percentage = Math.min(100, (pixelsFilled / color.count) * 100);
+                    return (
+                      <button
+                        key={color.id}
+                        onClick={() => { setActiveColor(color); setActiveMobileTab('none'); }}
+                        className={`aspect-square rounded-lg flex flex-col items-center justify-center relative overflow-hidden ${isActive ? 'ring-2 ring-white scale-110 z-10' : 'opacity-90'}`}
+                        style={{ backgroundColor: color.hex }}
+                      >
+                        <span className={`text-xs font-bold z-10 ${(color.rgb.r + color.rgb.g + color.rgb.b) > 400 ? 'text-black' : 'text-white'}`}>{isComplete ? <Icons.Check /> : color.id}</span>
+                        <div className="absolute bottom-0 left-0 w-full h-1 bg-black/20"><div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${percentage}%` }} /></div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {activeMobileTab === 'tools' && (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center text-gray-300 mb-2">
+                    <span className="font-bold">Tools</span>
+                  </div>
+                  <div className="flex gap-4">
+                    <button onClick={() => { setActiveTool(ToolMode.FILL); setActiveMobileTab('none'); }} className={`flex-1 p-4 rounded-xl flex flex-col items-center gap-2 ${activeTool === ToolMode.FILL ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                      <Icons.Bucket /> <span className="font-bold">Fill</span>
+                    </button>
+                    <button onClick={() => { setActiveTool(ToolMode.PAN); setActiveMobileTab('none'); }} className={`flex-1 p-4 rounded-xl flex flex-col items-center gap-2 ${activeTool === ToolMode.PAN ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                      <Icons.Hand /> <span className="font-bold">Pan</span>
+                    </button>
+                  </div>
+
+                  <div className="h-px bg-gray-800"></div>
+
+                  <div className="flex gap-4">
+                    <button onPointerDown={() => setShowOriginal(true)} onPointerUp={() => setShowOriginal(false)} className="flex-1 p-4 bg-gray-800 rounded-xl flex items-center justify-center gap-2 text-gray-300 font-bold active:bg-gray-700">
+                      <Icons.Eye /> View Original
+                    </button>
+                    <button onClick={downloadImage} className="flex-1 p-4 bg-gray-800 rounded-xl flex items-center justify-center gap-2 text-gray-300 font-bold active:bg-gray-700">
+                      <Icons.Download /> Save Image
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (confirm("Exit? Progress lost.")) {
+                        setStage(AppStage.UPLOAD);
+                        setSourceImage(null);
+                        setProcessedData(null);
+                      }
+                    }}
+                    className="w-full p-4 bg-red-900/30 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 mt-4"
+                  >
+                    <Icons.Undo /> Exit to Menu
+                  </button>
+                </div>
+              )}
+
+              {activeMobileTab === 'settings' && (
+                <div className="space-y-4">
+                  <h3 className="text-gray-400 font-bold uppercase text-xs tracking-wider">View Settings</h3>
+                  <button onClick={() => setToolConfig(p => ({ ...p, showNumbers: !p.showNumbers }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
+                    <span className="text-gray-200">Show Numbers</span>
+                    <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.showNumbers ? 'bg-indigo-600' : 'bg-gray-700'}`}>
+                      <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.showNumbers ? 'translate-x-6' : 'translate-x-0'}`} />
+                    </div>
+                  </button>
+                  <button onClick={() => setToolConfig(p => ({ ...p, showBorders: !p.showBorders }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
+                    <span className="text-gray-200">Show Borders</span>
+                    <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.showBorders ? 'bg-indigo-600' : 'bg-gray-700'}`}>
+                      <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.showBorders ? 'translate-x-6' : 'translate-x-0'}`} />
+                    </div>
+                  </button>
+                  <button onClick={() => setToolConfig(p => ({ ...p, highlightActive: !p.highlightActive }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
+                    <span className="text-gray-200">Highlight Active Color</span>
+                    <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.highlightActive ? 'bg-indigo-600' : 'bg-gray-700'}`}>
+                      <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.highlightActive ? 'translate-x-6' : 'translate-x-0'}`} />
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* MOBILE BOTTOM TAB BAR */}
+          <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-gray-950/90 backdrop-blur border-t border-gray-800 pb-safe">
+            <div className="flex items-center justify-around h-16">
+              <button
+                onClick={() => toggleMobileTab('colors')}
+                className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'colors' ? 'text-indigo-400' : 'text-gray-500'}`}
+              >
+                <div className="w-6 h-6 rounded-full border-2 border-current" style={{ backgroundColor: activeColor?.hex || 'transparent' }}></div>
+                <span className="text-xs font-bold">Palette</span>
               </button>
-              <button onClick={() => setToolConfig(p => ({ ...p, showBorders: !p.showBorders }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
-                <span className="text-gray-200">Show Borders</span>
-                <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.showBorders ? 'bg-indigo-600' : 'bg-gray-700'}`}>
-                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.showBorders ? 'translate-x-6' : 'translate-x-0'}`} />
-                </div>
+              <button
+                onClick={() => toggleMobileTab('tools')}
+                className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'tools' ? 'text-indigo-400' : 'text-gray-500'}`}
+              >
+                <Icons.Bucket />
+                <span className="text-xs font-bold">Tools</span>
               </button>
-              <button onClick={() => setToolConfig(p => ({ ...p, highlightActive: !p.highlightActive }))} className="w-full flex justify-between items-center p-4 bg-gray-800 rounded-xl">
-                <span className="text-gray-200">Highlight Active Color</span>
-                <div className={`w-12 h-6 rounded-full transition-colors relative ${toolConfig.highlightActive ? 'bg-indigo-600' : 'bg-gray-700'}`}>
-                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${toolConfig.highlightActive ? 'translate-x-6' : 'translate-x-0'}`} />
-                </div>
+              <button
+                onClick={() => toggleMobileTab('settings')}
+                className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'settings' ? 'text-indigo-400' : 'text-gray-500'}`}
+              >
+                <Icons.Wand />
+                <span className="text-xs font-bold">Options</span>
               </button>
             </div>
-          )}
+          </div>
+
+
+
+          <main className="flex-1 bg-gray-800 relative shadow-inner overflow-hidden flex flex-col items-center justify-center pb-16 md:pb-0">
+            {processedData && (
+              <ColoringCanvas
+                data={processedData}
+                palette={currentPalette}
+                activeColor={activeColor}
+                config={toolConfig}
+                activeTool={activeTool}
+                filledRegions={filledRegions}
+                onFillRegion={(id) => {
+                  const next = new Set(filledRegions);
+                  next.add(id);
+                  setFilledRegions(next);
+                }}
+                showOriginal={showOriginal}
+                originalImageSrc={sourceImage}
+                onToast={addToast}
+              />
+            )}
+          </main>
         </div>
-      </div>
-
-      {/* MOBILE BOTTOM TAB BAR */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-gray-950/90 backdrop-blur border-t border-gray-800 pb-safe">
-        <div className="flex items-center justify-around h-16">
-          <button
-            onClick={() => toggleMobileTab('colors')}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'colors' ? 'text-indigo-400' : 'text-gray-500'}`}
-          >
-            <div className="w-6 h-6 rounded-full border-2 border-current" style={{ backgroundColor: activeColor?.hex || 'transparent' }}></div>
-            <span className="text-xs font-bold">Palette</span>
-          </button>
-          <button
-            onClick={() => toggleMobileTab('tools')}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'tools' ? 'text-indigo-400' : 'text-gray-500'}`}
-          >
-            <Icons.Bucket />
-            <span className="text-xs font-bold">Tools</span>
-          </button>
-          <button
-            onClick={() => toggleMobileTab('settings')}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${activeMobileTab === 'settings' ? 'text-indigo-400' : 'text-gray-500'}`}
-          >
-            <Icons.Wand />
-            <span className="text-xs font-bold">Options</span>
-          </button>
-        </div>
-      </div>
-
-
-
-      <main className="flex-1 bg-gray-800 relative shadow-inner overflow-hidden flex flex-col items-center justify-center pb-16 md:pb-0">
-        {processedData && (
-          <ColoringCanvas
-            data={processedData}
-            palette={currentPalette}
-            activeColor={activeColor}
-            config={toolConfig}
-            activeTool={activeTool}
-            filledRegions={filledRegions}
-            onFillRegion={(id) => {
-              const next = new Set(filledRegions);
-              next.add(id);
-              setFilledRegions(next);
-            }}
-            showOriginal={showOriginal}
-            originalImageSrc={sourceImage}
-            onToast={addToast}
-          />
-        )}
-      </main>
-    </div>
-  );
+        );
 };
 
-export default App;
+        export default App;
