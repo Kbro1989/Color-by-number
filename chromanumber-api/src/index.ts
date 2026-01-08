@@ -39,6 +39,28 @@ export default {
 			}
 		}
 
+		// AI Image Generation Endpoint
+		if (url.pathname === "/ai/generate-image" && request.method === "POST") {
+			try {
+				const body = await request.json() as { prompt: string };
+				if (!body.prompt) {
+					return new Response("Missing prompt", { status: 400, headers: corsHeaders });
+				}
+
+				const aiService = new AIService(env);
+				const result = await aiService.generateImage(body.prompt);
+
+				return new Response(JSON.stringify({ image: result }), {
+					headers: { ...corsHeaders, "Content-Type": "application/json" },
+				});
+			} catch (error: any) {
+				return new Response(JSON.stringify({ error: error.message }), {
+					status: 500,
+					headers: { ...corsHeaders, "Content-Type": "application/json" },
+				});
+			}
+		}
+
 		// Existing logic (comments DB)
 		if (url.pathname === "/") {
 			const stmt = env.DB.prepare("SELECT * FROM comments LIMIT 3");

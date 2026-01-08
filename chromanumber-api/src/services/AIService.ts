@@ -35,6 +35,31 @@ export class AIService {
         throw new Error('All AI services failed. Please check your credentials.');
     }
 
+    async generateImage(prompt: string): Promise<string> {
+        try {
+            if (this.env.AI) {
+                // Use Stable Diffusion XL
+                const response = await this.env.AI.run(
+                    "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+                    { prompt }
+                );
+
+                // response is a ReadableStream or ArrayBuffer of the image
+                const binaryData = await (response as any).arrayBuffer();
+                const base64 = btoa(
+                    new Uint8Array(binaryData)
+                        .reduce((data, byte) => data + String.fromCharCode(byte), '')
+                );
+
+                return `data:image/png;base64,${base64}`;
+            }
+        } catch (error) {
+            console.error('Cloudflare Image Generation failed:', error);
+        }
+
+        throw new Error('Image generation failed.');
+    }
+
     private async callGemini(prompt: string): Promise<string> {
         const GEMINI_API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${this.env.GEMINI_API_KEY}`;
 
