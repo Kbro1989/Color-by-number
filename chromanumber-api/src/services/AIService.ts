@@ -1,6 +1,4 @@
 
-import { Ai } from '@cloudflare/ai';
-
 export class AIService {
     private env: Env;
 
