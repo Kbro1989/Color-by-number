@@ -10,7 +10,7 @@ export class AIService {
         try {
             // 1. Try Cloudflare Workers AI
             if (this.env.AI) {
-                const response = await this.env.AI.run('@cf/meta/llama-3-8b-instruct', {
+                const response = await this.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
                     messages: [
                         { role: 'system', content: 'You are a helpful assistant.' },
                         { role: 'user', content: prompt }
