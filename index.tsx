@@ -22,13 +22,7 @@ root.render(
         <App />
       </db.Provider>
     ) : (
-      <>
-        <App />
-        {/* Transparent alert for debug in production if needed */}
-        {window.location.hostname === 'localhost' && !isProviderValid && (
-          <div style={{ position: 'fixed', bottom: 0, background: 'red', color: 'white', zIndex: 9999 }}>Provider Missing!</div>
-        )}
-      </>
+      <App />
     )}
   </React.StrictMode>
 );

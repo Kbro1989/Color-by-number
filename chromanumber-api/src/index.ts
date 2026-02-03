@@ -1,4 +1,3 @@
-import { renderHtml } from "./renderHtml";
 import { AIService } from "./services/AIService";
 
 export default {
@@ -20,6 +19,13 @@ export default {
 			return new Response(null, {
 				status: 204,
 				headers: corsHeaders
+			});
+		}
+
+		// Root Heartbeat / Status
+		if (url.pathname === "/") {
+			return new Response(JSON.stringify({ status: "online", service: "ChromaNumber API" }), {
+				headers: { ...corsHeaders, "Content-Type": "application/json" }
 			});
 		}
 
