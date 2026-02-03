@@ -10,11 +10,26 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
+
+// Defensive check for InstantDB Provider
+const isProviderValid = !!(db && db.Provider);
+console.log(`[InstantDB] Provider status: ${isProviderValid ? 'VALID' : 'MISSING'}`);
+
 root.render(
   <React.StrictMode>
-    <db.Provider>
-      <App />
-    </db.Provider>
+    {isProviderValid ? (
+      <db.Provider>
+        <App />
+      </db.Provider>
+    ) : (
+      <>
+        <App />
+        {/* Transparent alert for debug in production if needed */}
+        {window.location.hostname === 'localhost' && !isProviderValid && (
+          <div style={{ position: 'fixed', bottom: 0, background: 'red', color: 'white', zIndex: 9999 }}>Provider Missing!</div>
+        )}
+      </>
+    )}
   </React.StrictMode>
 );
 
