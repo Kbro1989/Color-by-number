@@ -32,6 +32,13 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+    // Skip caching/intercepting for API calls and external services
+    if (event.request.url.includes('workers.dev') ||
+        event.request.url.includes('/ai/') ||
+        event.request.url.includes('instantdb.com')) {
+        return;
+    }
+
     // For HTML/navigation requests, try the network first
     if (event.request.mode === 'navigate') {
         event.respondWith(

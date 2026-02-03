@@ -7,9 +7,10 @@ export default {
 
 		// CORS Headers
 		const corsHeaders = {
-			"Access-Control-Allow-Origin": "*", // Configure this more restrictively in production
+			"Access-Control-Allow-Origin": "*",
 			"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-			"Access-Control-Allow-Headers": "Content-Type",
+			"Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+			"Access-Control-Max-Age": "86400",
 		};
 
 		// Handle CORS preflight

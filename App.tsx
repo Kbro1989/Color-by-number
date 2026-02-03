@@ -1,3 +1,4 @@
+console.log("App.tsx: Starting execution");
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createClient } from "@openauthjs/openauth/client";
 import { AppStage, ProcessedImage, PaletteColor, ToolConfig, PaletteTheme, ToolMode, ToastMessage, AI_STYLES, SessionData } from './types';
@@ -25,7 +26,7 @@ const Icons = {
 };
 
 const authClient = createClient({
-  clientID: "chromanumber-client",
+  clientID: import.meta.env.VITE_AUTH_CLIENT_ID || "pog-auth-client",
   issuer: import.meta.env.VITE_AUTH_ISSUER || "https://openauth-template.kristain33rs.workers.dev",
 });
 
