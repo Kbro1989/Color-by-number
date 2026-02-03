@@ -8,11 +8,11 @@ export class AIService {
 
     async generateText(prompt: string): Promise<string> {
         try {
-            // 1. Try Cloudflare Workers AI
+            // 1. Try Cloudflare Workers AI (Llama 3.3 is the latest balanced path)
             if (this.env.AI) {
-                const response = await this.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+                const response = await this.env.AI.run('@cf/meta/llama-3.3-70b-instruct', {
                     messages: [
-                        { role: 'system', content: 'You are a helpful assistant.' },
+                        { role: 'system', content: 'You are an AI assistant specialized in color-by-numbers generation and image processing guidance.' },
                         { role: 'user', content: prompt }
                     ]
                 });
@@ -25,7 +25,7 @@ export class AIService {
             console.warn('Cloudflare AI failed, trying Gemini fallback...', error);
         }
 
-        // 2. Fallback to Gemini API
+        // 2. Fallback to Gemini API (Gemini 1.5 Flash)
         if (this.env.GEMINI_API_KEY) {
             return this.callGemini(prompt);
         }
@@ -36,64 +36,67 @@ export class AIService {
     async generateImage(prompt: string): Promise<string> {
         try {
             if (this.env.AI) {
-                // Use Stable Diffusion XL
+                // Use Flux-1-Schnell (Premium quality, fast generation)
                 const response = await this.env.AI.run(
-                    "@cf/stabilityai/stable-diffusion-xl-base-1.0",
-                    { prompt }
+                    "@cf/black-forest-labs/flux-1-schnell",
+                    {
+                        prompt,
+                        num_steps: 4 // optimized for schnell
+                    }
                 );
 
-                // response is a ReadableStream or ArrayBuffer of the image
                 const binaryData = await (response as any).arrayBuffer();
-                const base64 = btoa(
-                    new Uint8Array(binaryData)
-                        .reduce((data, byte) => data + String.fromCharCode(byte), '')
-                );
+                const base64 = btoa(new Uint8Array(binaryData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
 
                 return `data:image/png;base64,${base64}`;
             }
         } catch (error) {
-            console.error('Cloudflare Image Generation failed:', error);
+            console.error('Cloudflare Flux Generation failed:', error);
+            // Fallback to SDXL if Flux fails? 
+            try {
+                if (this.env.AI) {
+                    const response = await this.env.AI.run("@cf/stabilityai/stable-diffusion-xl-base-1.0", { prompt });
+                    const binaryData = await (response as any).arrayBuffer();
+                    const base64 = btoa(new Uint8Array(binaryData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+                    return `data:image/png;base64,${base64}`;
+                }
+            } catch (inner) {
+                console.error('SDXL Fallback also failed');
+            }
         }
 
         throw new Error('Image generation failed.');
     }
 
     private async callGemini(prompt: string): Promise<string> {
-        const GEMINI_API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${this.env.GEMINI_API_KEY}`;
+        // Upgraded to Gemini 1.5 Flash
+        const GEMINI_API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.env.GEMINI_API_KEY}`;
 
         try {
             const response = await fetch(GEMINI_API_ENDPOINT, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: prompt
-                        }]
-                    }]
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0.7,
+                        topP: 0.95,
+                        topK: 40,
+                        maxOutputTokens: 2048,
+                    }
                 })
             });
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+                throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
             }
 
             const data: any = await response.json();
-
-            // Parse Gemini response
-            // Structure: candidates[0].content.parts[0].text
-            if (data.candidates && data.candidates.length > 0 &&
-                data.candidates[0].content &&
-                data.candidates[0].content.parts &&
-                data.candidates[0].content.parts.length > 0) {
+            if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
                 return data.candidates[0].content.parts[0].text;
-            } else {
-                throw new Error('Unexpected Gemini response format');
             }
-
+            throw new Error('Unexpected Gemini response format');
         } catch (error) {
             console.error('Gemini API call failed:', error);
             throw error;

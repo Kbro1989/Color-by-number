@@ -1,4 +1,3 @@
-console.log("App.tsx: Starting execution");
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createClient } from "@openauthjs/openauth/client";
 import { AppStage, ProcessedImage, PaletteColor, ToolConfig, PaletteTheme, ToolMode, ToastMessage, AI_STYLES, SessionData } from './types';
@@ -509,7 +508,7 @@ const App: React.FC = () => {
                           disabled={isGenerating || !genPrompt}
                           className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-white"
                         >
-                          {isGenerating ? 'Dreaming...' : <><Icons.Wand /> Generate Image</>}
+                          {isGenerating ? 'Fluxing Masterpiece...' : <><Icons.Wand /> Generate Image</>}
                         </button>
                       </>
                     ) : (
