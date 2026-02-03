@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chromanumber-v3';
+const CACHE_NAME = 'chromanumber-v4';
 const urlsToCache = [
     './',
     './index.html'
@@ -14,6 +14,26 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
+    // For HTML/navigation requests, try the network first
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+                .then(response => {
+                    // Update cache with the fresh version
+                    return caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, response.clone());
+                        return response;
+                    });
+                })
+                .catch(() => {
+                    // Fallback to cache if network is down
+                    return caches.match(event.request);
+                })
+        );
+        return;
+    }
+
+    // For other assets, stay with cache-first
     event.respondWith(
         caches.match(event.request)
             .then(response => {

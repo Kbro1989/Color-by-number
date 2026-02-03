@@ -1,7 +1,12 @@
 {
 	"compatibility_date": "2025-10-08",
+	"vars": {
+		"GITHUB_CLIENT_ID": "TODO",
+		"GITHUB_CLIENT_SECRET": "TODO",
+		"FRONTEND_URL": "http://localhost:3000"
+	},
 	"main": "src/index.ts",
-	"name": "openauth-template",
+	"name": "chromanumber-auth",
 	"upload_source_maps": true,
 	"kv_namespaces": [
 		{

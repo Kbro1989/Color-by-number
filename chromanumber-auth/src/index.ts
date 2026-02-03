@@ -21,7 +21,7 @@ export default {
 		// so users don't get confused by the "demo" auth parameters.
 		const url = new URL(request.url);
 		if (url.pathname === "/") {
-			return Response.redirect("https://color-by-number.kristain33rs.workers.dev");
+			return Response.redirect(env.FRONTEND_URL || "https://color-by-number.kristain33rs.workers.dev");
 		} else if (url.pathname === "/callback") {
 			return Response.json({
 				message: "OAuth flow complete!",
@@ -38,7 +38,7 @@ export default {
 			allow: async () => true,
 			providers: {
 				github: GithubProvider({
-					clientId: env.GITHUB_CLIENT_ID,
+					clientID: env.GITHUB_CLIENT_ID,
 					clientSecret: env.GITHUB_CLIENT_SECRET,
 					scopes: ["user:email"],
 				}),
@@ -68,8 +68,28 @@ export default {
 				},
 			},
 			success: async (ctx, value) => {
+				let email: string;
+				if (value.provider === "password") {
+					email = value.email;
+				} else if (value.provider === "github") {
+					const response = await fetch("https://api.github.com/user/emails", {
+						headers: {
+							Authorization: `Bearer ${value.tokenset.access}`,
+							"User-Agent": "ChromaNumber-Auth",
+						},
+					});
+					const emails = (await response.json()) as any[];
+					const primary = emails.find((e: any) => e.primary) || emails[0];
+					if (!primary?.email) {
+						throw new Error("Unable to retrieve email from GitHub");
+					}
+					email = primary.email;
+				} else {
+					throw new Error("Unsupported provider");
+				}
+
 				return ctx.subject("user", {
-					id: await getOrCreateUser(env, value.email),
+					id: await getOrCreateUser(env, email),
 				});
 			},
 		}).fetch(request, env, ctx);

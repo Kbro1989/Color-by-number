@@ -8,6 +8,7 @@ import { saveLastSession, loadLastSession, clearSession } from './utils/storage'
 import ColoringCanvas from './components/ColoringCanvas';
 import ToastContainer from './components/ToastContainer';
 import ExportModal from './components/ExportModal';
+import { db } from './src/services/instantDb';
 
 // SVG Icons
 const Icons = {
@@ -25,7 +26,7 @@ const Icons = {
 
 const authClient = createClient({
   clientID: "chromanumber-client",
-  issuer: "https://openauth-template.kristain33rs.workers.dev",
+  issuer: import.meta.env.VITE_AUTH_ISSUER || "https://openauth-template.kristain33rs.workers.dev",
 });
 
 const App: React.FC = () => {
@@ -61,6 +62,9 @@ const App: React.FC = () => {
   });
   const [showCelebration, setShowCelebration] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState<'none' | 'colors' | 'tools' | 'settings'>('none');
+
+  // InstantDB Auth
+  const { isLoading: authLoading, user: instantUser, error: authError } = db.useAuth();
   const [user, setUser] = useState<any>(null);
 
   // Canvas State (Lifted from ColoringCanvas)
@@ -143,6 +147,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem("access_token");
     setUser(null);
+    db.auth.signOut();
     addToast("Logged out successfully", 'info');
   };
 
