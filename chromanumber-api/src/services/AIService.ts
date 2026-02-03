@@ -34,34 +34,45 @@ export class AIService {
     }
 
     async generateImage(prompt: string): Promise<string> {
+        console.log("AIService: Starting Image Generation for prompt:", prompt.substring(0, 50) + "...");
         try {
             if (this.env.AI) {
                 // Use Flux-1-Schnell (Premium quality, fast generation)
-                const response = await this.env.AI.run(
+                const response: any = await this.env.AI.run(
                     "@cf/black-forest-labs/flux-1-schnell",
                     {
                         prompt,
-                        num_steps: 4 // optimized for schnell
+                        num_steps: 4
                     }
                 );
 
-                const binaryData = await (response as any).arrayBuffer();
-                const base64 = btoa(new Uint8Array(binaryData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+                // Handle binary or JSON response
+                let base64 = '';
+                if (response instanceof ReadableStream || response instanceof ArrayBuffer) {
+                    const binaryData = await (response instanceof ReadableStream ? new Response(response).arrayBuffer() : response);
+                    base64 = btoa(new Uint8Array(binaryData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+                } else if (response.image) {
+                    base64 = response.image;
+                } else {
+                    throw new Error("Unexpected AI response format: " + JSON.stringify(Object.keys(response)));
+                }
 
-                return `data:image/png;base64,${base64}`;
+                console.log("AIService: Image Generation Success (Flux)");
+                return base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
             }
-        } catch (error) {
-            console.error('Cloudflare Flux Generation failed:', error);
-            // Fallback to SDXL if Flux fails? 
+        } catch (error: any) {
+            console.error('AIService: Flux Generation failed:', error.message);
+            // Fallback to SDXL if Flux fails
             try {
                 if (this.env.AI) {
-                    const response = await this.env.AI.run("@cf/stabilityai/stable-diffusion-xl-base-1.0", { prompt });
-                    const binaryData = await (response as any).arrayBuffer();
+                    const response: any = await this.env.AI.run("@cf/stabilityai/stable-diffusion-xl-base-1.0", { prompt });
+                    const binaryData = await (response instanceof ReadableStream ? new Response(response).arrayBuffer() : response);
                     const base64 = btoa(new Uint8Array(binaryData).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+                    console.log("AIService: Image Generation Success (SDXL Fallback)");
                     return `data:image/png;base64,${base64}`;
                 }
-            } catch (inner) {
-                console.error('SDXL Fallback also failed');
+            } catch (inner: any) {
+                console.error('AIService: SDXL Fallback also failed:', inner.message);
             }
         }
 

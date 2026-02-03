@@ -5,17 +5,22 @@ export default {
 	async fetch(request, env) {
 		const url = new URL(request.url);
 
-		// CORS Headers
+		// Dynamic CORS Headers
+		const origin = request.headers.get("Origin") || "*";
 		const corsHeaders = {
-			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Origin": origin,
 			"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 			"Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
 			"Access-Control-Max-Age": "86400",
+			"Vary": "Origin",
 		};
 
 		// Handle CORS preflight
 		if (request.method === "OPTIONS") {
-			return new Response(null, { headers: corsHeaders });
+			return new Response(null, {
+				status: 204,
+				headers: corsHeaders
+			});
 		}
 
 		// AI Generation Endpoint
