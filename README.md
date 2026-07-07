@@ -1,23 +1,31 @@
-# ChromaNumber AI
+# Color-by-number — Generative Art Platform
 
-AI-Powered Color by Number Generator built with React + Vite + Cloudflare Workers.
+> TypeScript · React · Vite · Cloudflare · InstantDB
 
-## Features
-- **Upload Image**: Convert any image into a color-by-number template.
-- **AI Generation**: Generate images from text prompts using Google Gemini.
-- **AI Remix**: Remix uploaded images with style modifiers.
-- **Interactive Coloring**: Fill, pan, and zoom to color your masterpiece.
-- **Responsive**: Works on Mobile and Desktop.
+Generative color-by-number art app with real-time multiplayer and authentication.
+Multi-package repository containing the full platform stack.
 
-## Tech Stack
-- Frontend: React, Vite, TailwindCSS (CDN)
-- AI: Google Gemini 1.5 Flash
-- Deployment: Cloudflare Workers
+## Packages
 
-## Local Development
-1. `npm install`
-2. Configure `.env.local` with `VITE_GEMINI_API_KEY`
-3. `npm run dev`
+| Directory | Purpose |
+|---|---|
+| `chromanumber-api/` | Core API worker |
+| `chromanumber-auth/` | OpenAuth authentication service |
+| `chromanumber-realtime/` | Real-time collaboration via Durable Objects |
+| `d1-template/` | D1 database schema + migrations |
+| `multiplayer-globe-template/` | Globe visualization |
+| `openauth-template/` | Auth template |
 
-## Deployment
-`npm run deploy`
+## Root Files
+
+`App.tsx` · `index.tsx` · `types.ts` · `vite.config.ts` · `wrangler.toml` ·
+`instant.perms.ts` · `instant.schema.ts` (InstantDB real-time schema)
+
+## Stack
+
+React + TypeScript · Vite · Cloudflare Workers · InstantDB · Tailwind CSS
+
+```bash
+npm run dev
+wrangler deploy
+```
